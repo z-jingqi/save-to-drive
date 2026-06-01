@@ -1,0 +1,536 @@
+/* ── Reset & base ────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --blue:   #1a73e8;
+  --amber:  #f9ab00;
+  --green:  #188038;
+  --red:    #d93025;
+  --text:   #202124;
+  --sub:    #5f6368;
+  --border: #dadce0;
+  --bg:     #ffffff;
+  --hover:  #f1f3f4;
+  --radius: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  color: var(--text);
+}
+
+body { background: var(--bg); min-width: 320px; max-width: 360px; }
+
+/* ── App shell ───────────────────────────────────────────────── */
+.app { display: flex; flex-direction: column; }
+
+/* ── Header ──────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.header-brand { display: flex; align-items: center; gap: 7px; }
+.header-title { font-weight: 600; font-size: 14px; }
+
+/* ── Default folder row ──────────────────────────────────────── */
+.folder-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  background: var(--hover);
+  border-bottom: 1px solid var(--border);
+  gap: 8px;
+}
+
+.folder-setting-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  flex: 1;
+}
+
+.folder-icon-sm { font-size: 13px; flex-shrink: 0; }
+
+.folder-setting-name {
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.change-btn {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-size: 11px;
+  color: var(--blue);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.change-btn:hover { background: var(--bg); }
+
+/* ── Empty state ─────────────────────────────────────────────── */
+.empty {
+  padding: 20px 16px;
+  color: var(--sub);
+  line-height: 1.5;
+  text-align: center;
+}
+
+/* ── Job list ────────────────────────────────────────────────── */
+.job-list { list-style: none; }
+
+.job-row {
+  position: relative;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  transition: background 0.15s;
+}
+.job-row:last-child { border-bottom: none; }
+
+.job-clickable { cursor: pointer; }
+.job-clickable:hover { background: var(--hover); }
+
+/* Dismiss button — hidden until row is hovered */
+.job-remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--sub);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+  z-index: 1;
+}
+.job-row:hover .job-remove { opacity: 1; }
+.job-remove:hover { background: var(--border); color: var(--text); }
+/* Cancel on active rows is always visible — user needs to know they can stop it */
+.job-cancel { opacity: 1 !important; }
+
+/* ── Thumbnail wrapper + base thumb ─────────────────────────── */
+
+/* Outer container — sized here so overlays + check badge position against it */
+.thumb-wrap {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+}
+
+/* Base thumbnail — fills the wrap, clips image/letter to rounded rect */
+.thumb {
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.thumb-letter {
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.5px;
+  user-select: none;
+}
+
+/* Shimmer while image is still being fetched for display */
+.thumb-loading {
+  background: linear-gradient(90deg, var(--hover) 25%, var(--border) 50%, var(--hover) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite;
+}
+
+/* ── State overlays (absolute, positioned on .thumb-wrap) ────── */
+
+.t-overlay {
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  pointer-events: none;
+  border-radius: 8px 8px 0 0;
+}
+
+/* Full-coverage dim — AUTHING, ERROR, indeterminate FETCH */
+.t-dim {
+  bottom: 0;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.48);
+}
+
+/* Fill-reveal: covers the top (100-progress)%, recedes as progress climbs */
+.t-fill {
+  background: rgba(0, 0, 0, 0.52);
+  transition: height 0.22s ease-out;
+}
+/* Colored progress line at the bottom of the fill */
+.t-fill::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+}
+.t-fill-fetch::after  { background: rgba(180, 180, 180, 0.85); }
+.t-fill-upload::after { background: rgba(26, 115, 232, 0.95); }
+
+/* Indeterminate fetch (no Content-Length) — shimmer pulse over dim */
+.t-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.06) 25%,
+    rgba(255,255,255,0.18) 50%,
+    rgba(255,255,255,0.06) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite;
+}
+
+/* Progress % chip — centered */
+.t-pct {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* AUTHING spinner */
+.t-spinner {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 20px; height: 20px;
+  border: 2.5px solid rgba(255,255,255,0.25);
+  border-top-color: rgba(255,255,255,0.9);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+  pointer-events: none;
+}
+@keyframes spin {
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+/* ERROR tint + badge */
+.t-err { background: rgba(217, 48, 37, 0.4) !important; }
+.t-badge-err {
+  position: absolute;
+  bottom: 3px; right: 3px;
+  width: 18px; height: 18px;
+  background: var(--red);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+
+/* SUCCESS ✓ badge — springs in at bottom-right corner */
+.t-check {
+  position: absolute;
+  bottom: -5px; right: -5px;
+  width: 22px; height: 22px;
+  background: var(--green);
+  border: 2.5px solid #fff;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  animation: check-pop 0.38s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  pointer-events: none;
+}
+@keyframes check-pop {
+  0%   { transform: scale(0); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* SUCCESS row — one-time green glow via pseudo-element */
+.job-success::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(24, 128, 56, 0.1);
+  animation: row-glow 1.1s ease-out forwards;
+  pointer-events: none;
+}
+@keyframes row-glow {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Job content ─────────────────────────────────────────────── */
+.job-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 20px; /* room for the × button */
+}
+
+.job-meta { display: flex; flex-direction: column; gap: 1px; }
+.job-name {
+  font-weight: 500;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.job-folder { color: var(--sub); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Progress bar */
+.progress-track {
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--blue);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.job-status-row { display: flex; align-items: center; }
+
+.status-text      { color: var(--sub); font-size: 11px; }
+.status-upload    { color: var(--blue); }
+.view-hint        { color: var(--blue); font-size: 11px; }
+.job-folder-saved { color: var(--green); }
+
+.error-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.error-text { color: var(--red); font-size: 11px; flex: 1; min-width: 0; word-break: break-word; }
+.retry-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--blue);
+  cursor: pointer;
+}
+.retry-btn:hover { background: var(--hover); }
+
+/* ── Folder picker section ───────────────────────────────────── */
+.picker-section {
+  padding: 12px 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.picker-hint {
+  font-size: 12px;
+  color: var(--sub);
+  margin-bottom: 8px;
+}
+.picker-hint .filename { color: var(--text); }
+
+.folder-picker { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; }
+
+/* Quick select */
+.quick-select {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.quick-label { color: var(--sub); font-size: 11px; white-space: nowrap; }
+.quick-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--blue);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+.quick-btn:hover { background: var(--hover); }
+
+/* Breadcrumb */
+.breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+.crumb-item { display: flex; align-items: center; }
+.crumb-sep  { color: var(--sub); flex-shrink: 0; }
+.crumb-btn {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  font-size: 12px;
+  color: var(--blue);
+  cursor: pointer;
+  border-radius: 3px;
+}
+.crumb-btn:disabled { color: var(--text); cursor: default; font-weight: 500; }
+.crumb-btn:not(:disabled):hover { background: var(--hover); }
+
+/* Search */
+.folder-search {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  outline: none;
+  background: var(--bg);
+}
+.folder-search:focus { border-color: var(--blue); }
+
+/* Folder list */
+.folder-list {
+  list-style: none;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.folder-msg { padding: 10px 12px; color: var(--sub); font-size: 12px; }
+.folder-empty { text-align: center; }
+
+.folder-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.folder-item:last-child { border-bottom: none; }
+.folder-item:hover { background: var(--hover); }
+
+.folder-drill {
+  flex: 1;
+  text-align: left;
+  background: none;
+  border: none;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.folder-save-btn {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--blue);
+  cursor: pointer;
+}
+.folder-save-btn:hover { background: var(--hover); }
+
+/* New folder */
+.new-folder-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.new-folder-input {
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  outline: none;
+}
+.new-folder-input:focus { border-color: var(--blue); }
+.new-folder-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--blue);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 0;
+  text-align: left;
+}
+.new-folder-btn:hover { text-decoration: underline; }
+
+/* Picker confirm */
+.picker-confirm { padding-top: 4px; }
+
+/* Buttons */
+.btn-primary {
+  background: var(--blue);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-primary:hover { filter: brightness(1.1); }
+.btn-primary:disabled { opacity: 0.5; cursor: default; }
+.btn-primary em { font-style: normal; }
+
+.btn-ghost {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text);
+}
+.btn-ghost:hover { background: var(--hover); }
+
+.btn-full { width: 100%; }
