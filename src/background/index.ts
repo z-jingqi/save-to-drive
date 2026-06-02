@@ -1,39 +1,46 @@
 import type { Job, PopupMessage, OffscreenResponse } from '../lib/types.ts';
-import { getToken } from '../lib/auth.ts';
-import { listFolders, createFolder } from '../lib/drive-api.ts';
+import { t } from '../lib/i18n.ts';
+import { getProvider } from '../providers/registry.ts';
 import {
-  addJob, enqueue, getJob, getJobs,
-  getPrefs, getPrefsSync, initPrefs,
-  setPrefs, setLastFolder, updateJob, removeJob,
+  addJob, enqueue, getJobs, getPrefs, getPrefsSync, initPrefs,
+  setPrefs, setLastFolderForProvider, getLastFolder, updateJob, removeJob,
 } from './state-manager.ts';
 import { runJob, onOffscreenMessage } from './upload.ts';
 
-// ── Startup ───────────────────────────────────────────────────────────────────
-
-// Warm the prefs cache immediately so context-menu clicks can read prefs
-// synchronously without losing the user-gesture activation context.
-initPrefs();
+// Warm the prefs cache, then sync the context menu title to the active provider
+initPrefs().then(() => syncContextMenuTitle());
 
 // ── Context menu registration ─────────────────────────────────────────────────
 
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({
-    id: 'save-to-drive',
-    title: 'Save to Drive',
-    // Only shown on links and images; hidden everywhere else by Chrome automatically
-    contexts: ['link', 'image'],
+chrome.runtime.onInstalled.addListener(() => syncContextMenuTitle());
+
+/** Create-or-update the context menu label to match the active provider + folder. */
+function syncContextMenuTitle(): void {
+  const prefs    = getPrefsSync();
+  const provider = getProvider(prefs.providerId);
+  const folder     = getLastFolder(prefs.providerId);
+  const rawFolder  = folder?.name ?? provider.rootFolderName;
+  const folderName = rawFolder.length > 28 ? rawFolder.slice(0, 26) + '…' : rawFolder;
+  const title      = t('context_menu_save_to_folder', provider.name, folderName);
+  chrome.contextMenus.update('save-to-drive', { title }, () => {
+    if (chrome.runtime.lastError) {
+      chrome.contextMenus.create({ id: 'save-to-drive', title, contexts: ['link', 'image'] });
+    }
   });
-});
+}
 
 // ── Context menu click ────────────────────────────────────────────────────────
 
-chrome.contextMenus.onClicked.addListener((info) => {
+chrome.contextMenus.onClicked.addListener((info, tab) => {
   const url = info.linkUrl ?? info.srcUrl;
   if (!url) return;
 
-  // Use cached folder as a best-guess default; authoritative value loaded below.
   const cached = getPrefsSync();
-  const filename = inferFilename(url);
+  const pageTitle = tab?.title;
+  const filename = inferFilename(url, pageTitle);
+  const lastFolder = getLastFolder(cached.providerId);
+  const providerName = getProvider(cached.providerId).name;
+
   const job: Job = {
     id: crypto.randomUUID(),
     url,
@@ -41,33 +48,39 @@ chrome.contextMenus.onClicked.addListener((info) => {
     mimeType: inferMimeType(filename, info.mediaType),
     state: 'IDLE',
     progress: 0,
-    folderId: cached.lastFolder?.id ?? null,
-    folderName: cached.lastFolder?.name ?? 'My Drive',
+    providerId: cached.providerId,
+    folderId: lastFolder?.id ?? null,
+    folderName: lastFolder?.name ?? providerName,
+    pageTitle,
     retries: 0,
   };
   addJob(job);
 
-  // Open popup immediately while the user-gesture activation is still valid.
+  // Open popup immediately while the user-gesture is still valid
   chrome.action.openPopup().catch(() => {});
 
-  // Load authoritative folder from storage (handles SW-restart stale-cache case),
-  // then enqueue. The job starts uploading only after the correct folder is set.
-  getPrefs().then(prefs => {
+  // Load authoritative prefs, validate the provider is actually signed in,
+  // then enqueue. Falls back to google-drive if stored provider has no token.
+  getPrefs().then(async prefs => {
+    let providerId = prefs.providerId;
+    try {
+      await getProvider(providerId).getToken(false);
+    } catch {
+      providerId = 'google-drive';
+    }
+    const folder = getLastFolder(providerId);
     updateJob(job.id, {
-      folderId: prefs.lastFolder?.id ?? null,
-      folderName: prefs.lastFolder?.name ?? 'My Drive',
+      providerId,
+      folderId: folder?.id ?? null,
+      folderName: folder?.name ?? getProvider(providerId).name,
     });
-    enqueue(job.id, runJob);
+    // If rename mode is on, leave job in IDLE — popup sends START_JOB to begin
+    if (!prefs.renameBeforeSave) enqueue(job.id, runJob);
   });
 });
 
-// ── Long-lived port from offscreen (keeps SW alive during uploads) ────────────
-//
-// chrome.runtime.sendMessage() alone cannot keep an MV3 service worker alive
-// between calls — the SW may be terminated, causing the badge to freeze.
-// A connected port extends the SW's lifetime for its entire duration.
+// ── Long-lived ports from offscreen (keeps SW alive + enables CANCEL) ─────────
 
-// Ports stored by jobId so we can forward CANCEL back to the offscreen
 const uploadPorts = new Map<string, chrome.runtime.Port>();
 
 chrome.runtime.onConnect.addListener((port) => {
@@ -77,7 +90,9 @@ chrome.runtime.onConnect.addListener((port) => {
 
   port.onMessage.addListener((msg: OffscreenResponse & Record<string, unknown>) => {
     if (msg.type === 'TYPE_DETECTED') {
-      updateJob(msg.jobId as string, { mimeType: msg.mimeType as string });
+      const update: Partial<Job> = { mimeType: msg.mimeType as string };
+      if (msg.filename) update.filename = msg.filename as string;
+      updateJob(msg.jobId as string, update);
     } else {
       onOffscreenMessage(msg as OffscreenResponse, showSavedNotification, enqueue);
     }
@@ -93,25 +108,21 @@ chrome.runtime.onMessage.addListener((
   _sender,
   sendResponse
 ) => {
-  // Messages from the offscreen document
   if (msg.type === 'TYPE_DETECTED' || msg.type === 'PROGRESS' || msg.type === 'DONE' || msg.type === 'ERROR') {
     if (msg.type === 'TYPE_DETECTED') {
-      updateJob(msg.jobId as string, { mimeType: msg.mimeType as string });
+      const update: Partial<Job> = { mimeType: msg.mimeType as string };
+      if (msg.filename) update.filename = msg.filename as string;
+      updateJob(msg.jobId as string, update);
     } else {
       onOffscreenMessage(msg as OffscreenResponse, showSavedNotification, enqueue);
     }
     return false;
   }
-
-  // Messages from the popup — handle async and keep channel open
   handlePopupMessage(msg as PopupMessage, sendResponse);
   return true;
 });
 
-async function handlePopupMessage(
-  msg: PopupMessage,
-  send: (r: unknown) => void
-): Promise<void> {
+async function handlePopupMessage(msg: PopupMessage, send: (r: unknown) => void): Promise<void> {
   try {
     switch (msg.type) {
       case 'GET_STATE':
@@ -122,24 +133,48 @@ async function handlePopupMessage(
         send({ type: 'PREFS', prefs: await getPrefs() });
         break;
 
-      case 'SET_PREFS':
-        await setPrefs(msg.prefs);
+      case 'SET_PREFS': {
+        const patch = msg.prefs;
+        // If lastFolders is being updated, also persist via setLastFolderForProvider
+        if (patch.lastFolders) {
+          for (const [pid, folder] of Object.entries(patch.lastFolders)) {
+            await setLastFolderForProvider(pid, folder);
+          }
+          // Remove from patch so we don't double-write
+          const { lastFolders: _, ...rest } = patch;
+          if (Object.keys(rest).length) await setPrefs(rest);
+        } else {
+          await setPrefs(patch);
+        }
+        // Keep context menu title in sync when provider or folder changes
+        if (patch.providerId || patch.lastFolders) syncContextMenuTitle();
         send({ type: 'OK' });
         break;
+      }
 
       case 'LIST_FOLDERS': {
-        const token = await getToken(false);
-        const folders = await listFolders(token, msg.parentId, msg.query);
+        const prefs = await getPrefs();
+        const provider = getProvider(prefs.providerId);
+        const token = await provider.getToken(false);
+        const folders = await provider.listFolders(token, msg.parentId, msg.query);
         send({ type: 'FOLDERS', folders });
         break;
       }
 
       case 'CREATE_FOLDER': {
-        const token = await getToken(false);
-        const folder = await createFolder(token, msg.name, msg.parentId);
+        const prefs = await getPrefs();
+        const provider = getProvider(prefs.providerId);
+        const token = await provider.getToken(false);
+        const folder = await provider.createFolder(token, msg.name, msg.parentId);
         send({ type: 'FOLDER_CREATED', folder });
         break;
       }
+
+      case 'START_JOB':
+        updateJob(msg.jobId, { filename: msg.filename });
+        enqueue(msg.jobId, runJob);
+        send({ type: 'OK' });
+        break;
 
       case 'RETRY_JOB':
         updateJob(msg.jobId, { state: 'IDLE', error: undefined, retries: 0 });
@@ -153,7 +188,6 @@ async function handlePopupMessage(
         break;
 
       case 'CANCEL_JOB': {
-        // Tell offscreen to abort fetch/XHR, then drop the job
         const port = uploadPorts.get(msg.jobId);
         if (port) port.postMessage({ type: 'CANCEL' });
         removeJob(msg.jobId);
@@ -171,73 +205,62 @@ async function handlePopupMessage(
 
 // ── Notifications ─────────────────────────────────────────────────────────────
 
-// Maps notification ID → Drive URL so we can open it on click
 const notifLinks = new Map<string, string>();
 
 function showSavedNotification(job: Job): void {
   const notifId = `std-${job.id}`;
-  const link = job.folderId
-    ? `https://drive.google.com/drive/folders/${job.folderId}`
-    : `https://drive.google.com/drive/my-drive`;
+  // Use provider-specific folder URL from the job (set by offscreen on completion)
+  const link = job.folderViewLink ?? getProvider(job.providerId).folderUrl(job.folderId);
   notifLinks.set(notifId, link);
 
   chrome.notifications.create(notifId, {
     type: 'basic',
     iconUrl: 'icons/icon48.png',
-    title: 'Saved to Drive',
-    message: `${job.filename}  →  ${job.folderName}`,
-    contextMessage: 'Click to open in Drive',
+    title: t('notif_title', getProvider(job.providerId).name),
+    message: t('notif_body', job.filename, job.folderName),
+    contextMessage: t('notif_context'),
     isClickable: true,
   });
 }
 
 chrome.notifications.onClicked.addListener((notifId) => {
   const url = notifLinks.get(notifId);
-  if (url) {
-    chrome.tabs.create({ url });
-    notifLinks.delete(notifId);
-  }
+  if (url) { chrome.tabs.create({ url }); notifLinks.delete(notifId); }
   chrome.notifications.clear(notifId);
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function inferFilename(url: string): string {
+function inferFilename(url: string, pageTitle?: string): string {
   try {
     const u = new URL(url);
-    const parts = u.pathname.split('/').filter(Boolean);
-    const last = parts[parts.length - 1];
+    const last = u.pathname.split('/').filter(Boolean).pop();
     if (last?.includes('.')) return decodeURIComponent(last);
   } catch { /* invalid URL */ }
-  return `saved-${Date.now()}`;
+  const ts = Date.now();
+  if (pageTitle) {
+    const safe = pageTitle.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-');
+    const prefix = `saved-${ts}-`;
+    return prefix + safe.slice(0, 80 - prefix.length);
+  }
+  return `saved-${ts}`;
 }
 
 const MIME_MAP: Record<string, string> = {
-  jpg:  'image/jpeg',
-  jpeg: 'image/jpeg',
-  png:  'image/png',
-  gif:  'image/gif',
-  webp: 'image/webp',
-  svg:  'image/svg+xml',
-  pdf:  'application/pdf',
-  mp4:  'video/mp4',
-  mp3:  'audio/mpeg',
-  zip:  'application/zip',
-  doc:  'application/msword',
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',
+  webp: 'image/webp', svg: 'image/svg+xml', pdf: 'application/pdf',
+  mp4: 'video/mp4', mp3: 'audio/mpeg', zip: 'application/zip',
+  doc: 'application/msword',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  xls:  'application/vnd.ms-excel',
+  xls: 'application/vnd.ms-excel',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  txt:  'text/plain',
-  html: 'text/html',
-  csv:  'text/csv',
+  txt: 'text/plain', html: 'text/html', csv: 'text/csv',
 };
 
 function inferMimeType(filename: string, mediaType?: string): string {
   const ext = filename.split('.').pop()?.toLowerCase() ?? '';
   const fromExt = MIME_MAP[ext];
   if (fromExt) return fromExt;
-  // Chrome tells us the broad media type from the right-click context —
-  // use it as a fallback when the URL has no recognisable extension.
   if (mediaType === 'image') return 'image/*';
   if (mediaType === 'video') return 'video/*';
   if (mediaType === 'audio') return 'audio/*';

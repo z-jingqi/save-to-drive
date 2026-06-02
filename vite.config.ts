@@ -11,6 +11,7 @@ export default defineConfig({
       // the manifest-defined entries that CRXJS manages.
       input: {
         offscreen: 'src/offscreen/index.html',
+        options: 'src/options/index.html',
       },
     },
   },

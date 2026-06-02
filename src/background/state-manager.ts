@@ -59,11 +59,12 @@ function drain(): void {
 
 // ── Badge ─────────────────────────────────────────────────────────────────────
 
+// Badge colours match the sse-viewer-inspired palette used in the popup
 const COLORS = {
-  blue:  '#1a73e8',
-  amber: '#f9ab00',
-  green: '#188038',
-  red:   '#d93025',
+  blue:  '#c2712a',  // primary amber (approx oklch 0.62 0.14 39)
+  amber: '#c2712a',
+  green: '#3a8a4a',  // approx oklch 0.60 0.15 145
+  red:   '#c0392b',  // approx oklch 0.58 0.22 27
 } as const;
 
 let successClearTimer: ReturnType<typeof setTimeout> | null = null;
@@ -111,21 +112,26 @@ function badge(text: string, color: keyof typeof COLORS): void {
 
 // ── Prefs (sync storage + in-memory cache) ────────────────────────────────────
 
-const DEFAULT_PREFS: Prefs = { lastFolder: null };
+const DEFAULT_PREFS: Prefs = { providerId: 'google-drive', lastFolders: {}, renameBeforeSave: false };
 
-let _cache: Prefs = { ...DEFAULT_PREFS };
+let _cache: Prefs = { ...DEFAULT_PREFS, lastFolders: {} };
 
 /** Load prefs from storage into the in-memory cache. Call once on SW startup. */
 export async function initPrefs(): Promise<void> {
-  const s = await chrome.storage.sync.get(['lastFolder']);
+  const s = await chrome.storage.sync.get(['providerId', 'lastFolders', 'lastFolder', 'renameBeforeSave']);
   _cache = {
-    lastFolder: s['lastFolder'] ?? DEFAULT_PREFS.lastFolder,
+    providerId: s['providerId'] ?? DEFAULT_PREFS.providerId,
+    // Migrate legacy single lastFolder → lastFolders map
+    lastFolders: s['lastFolders'] ?? (
+      s['lastFolder'] ? { 'google-drive': s['lastFolder'] } : {}
+    ),
+    renameBeforeSave: s['renameBeforeSave'] ?? false,
   };
 }
 
 /** Synchronous read — always returns the cached value. */
 export function getPrefsSync(): Prefs {
-  return { ..._cache };
+  return { ..._cache, lastFolders: { ..._cache.lastFolders } };
 }
 
 /** Async read (fetches from storage, also updates cache). */
@@ -139,7 +145,11 @@ export async function setPrefs(patch: Partial<Prefs>): Promise<void> {
   await chrome.storage.sync.set(patch);
 }
 
-export async function setLastFolder(folder: Folder | null): Promise<void> {
-  _cache.lastFolder = folder;
-  await chrome.storage.sync.set({ lastFolder: folder });
+export function getLastFolder(providerId: string): Folder | null {
+  return _cache.lastFolders[providerId] ?? null;
+}
+
+export async function setLastFolderForProvider(providerId: string, folder: Folder | null): Promise<void> {
+  _cache.lastFolders = { ..._cache.lastFolders, [providerId]: folder };
+  await chrome.storage.sync.set({ lastFolders: _cache.lastFolders });
 }

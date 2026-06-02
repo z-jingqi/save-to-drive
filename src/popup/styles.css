@@ -1,23 +1,48 @@
 /* ── Reset & base ────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Light theme — warm amber/olive palette mirrored from sse-viewer */
 :root {
-  --blue:   #1a73e8;
-  --amber:  #f9ab00;
-  --green:  #188038;
-  --red:    #d93025;
-  --text:   #202124;
-  --sub:    #5f6368;
-  --border: #dadce0;
-  --bg:     #ffffff;
-  --hover:  #f1f3f4;
+  --blue:   oklch(0.6171 0.1375 39.0427);  /* primary amber */
+  --amber:  oklch(0.65   0.14   39);        /* uploading badge */
+  --green:  oklch(0.6    0.15   145);       /* success */
+  --red:    oklch(0.5771 0.2152 27.325);    /* error/destructive */
+  --text:   oklch(0.3438 0.0269 95.7226);  /* foreground */
+  --sub:    oklch(0.5059 0.0075 97.4233);  /* muted-foreground */
+  --border: oklch(0.8847 0.0069 97.3627);  /* border */
+  --bg:     oklch(0.9818 0.0054 95.0986);  /* background */
+  --hover:  oklch(0.9341 0.0153 90.239);   /* muted / hover */
+  --card:   oklch(1 0 0);
   --radius: 8px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 13px;
   color: var(--text);
 }
 
+/* Dark theme — auto, mirrors sse-viewer dark palette */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --blue:   oklch(0.6724 0.1308 38.7559);
+    --amber:  oklch(0.7    0.13   39);
+    --green:  oklch(0.7    0.15   145);
+    --red:    oklch(0.6368 0.2078 25.3313);
+    --text:   oklch(0.8074 0.0142 93.0137);
+    --sub:    oklch(0.7113 0.0169 99.0657);
+    --border: oklch(0.3618 0.0101 106.8928);
+    --bg:     oklch(0.2679 0.0036 106.6427);
+    --hover:  oklch(0.2213 0.0038 106.707);
+    --card:   oklch(0.2679 0.0036 106.6427);
+  }
+}
+
 body { background: var(--bg); min-width: 320px; max-width: 360px; }
+
+/* Thin styled scrollbar, same as sse-viewer */
+* { scrollbar-width: thin; scrollbar-color: oklch(from var(--sub) l c h / 0.3) transparent; }
+*::-webkit-scrollbar { width: 6px; height: 6px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: oklch(from var(--sub) l c h / 0.3); border-radius: 3px; }
+*::-webkit-scrollbar-thumb:hover { background: oklch(from var(--sub) l c h / 0.5); }
 
 /* ── App shell ───────────────────────────────────────────────── */
 .app { display: flex; flex-direction: column; }
@@ -33,6 +58,80 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
 
 .header-brand { display: flex; align-items: center; gap: 7px; }
 .header-title { font-weight: 600; font-size: 14px; }
+
+.rename-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.rename-switch-label {
+  font-size: 11px;
+  color: var(--sub);
+}
+.rename-switch input { display: none; }
+.rename-switch-track {
+  position: relative;
+  width: 28px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--border);
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+.rename-switch-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.18s;
+}
+.rename-switch input:checked ~ .rename-switch-track { background: var(--blue); }
+.rename-switch input:checked ~ .rename-switch-track::after { left: 14px; }
+
+/* ── Provider dropdown ───────────────────────────────────────── */
+.provider-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--hover);
+}
+
+.provider-label {
+  font-size: 11px;
+  color: var(--sub);
+  flex-shrink: 0;
+}
+
+.provider-select-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.provider-select-icon { flex-shrink: 0; }
+
+.provider-select {
+  width: 112px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+  cursor: pointer;
+  outline: none;
+}
+.provider-select:focus { border-color: var(--blue); }
 
 /* ── Default folder row ──────────────────────────────────────── */
 .folder-setting {
@@ -64,8 +163,14 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
   text-overflow: ellipsis;
 }
 
-.change-btn {
+.folder-setting-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   flex-shrink: 0;
+}
+
+.change-btn {
   background: none;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -76,6 +181,18 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
   white-space: nowrap;
 }
 .change-btn:hover { background: var(--bg); }
+
+.reset-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--sub);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.reset-btn:hover { color: var(--text); border-color: var(--border); background: var(--bg); }
 
 /* ── Empty state ─────────────────────────────────────────────── */
 .empty {
@@ -174,61 +291,27 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
   animation: shimmer 1.2s infinite;
 }
 
-/* ── State overlays (absolute, positioned on .thumb-wrap) ────── */
+/* ── State overlays ──────────────────────────────────────────── */
 
+/* Clips all overlays + bar to the thumbnail's rounded rect */
+.thumb-clip {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Base overlay — full coverage, no border-radius needed (.thumb-clip clips) */
 .t-overlay {
   position: absolute;
-  left: 0; right: 0; top: 0;
+  inset: 0;
   pointer-events: none;
-  border-radius: 8px 8px 0 0;
 }
 
-/* Full-coverage dim — AUTHING, ERROR, indeterminate FETCH */
-.t-dim {
-  bottom: 0;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.48);
-}
+/* Full dim — AUTHING, ERROR */
+.t-dim { background: rgba(0, 0, 0, 0.48); }
 
-/* Fill-reveal: covers the top (100-progress)%, recedes as progress climbs */
-.t-fill {
-  background: rgba(0, 0, 0, 0.52);
-  transition: height 0.22s ease-out;
-}
-/* Colored progress line at the bottom of the fill */
-.t-fill::after {
-  content: '';
-  position: absolute;
-  bottom: 0; left: 0; right: 0;
-  height: 2px;
-}
-.t-fill-fetch::after  { background: rgba(180, 180, 180, 0.85); }
-.t-fill-upload::after { background: rgba(26, 115, 232, 0.95); }
-
-/* Indeterminate fetch (no Content-Length) — shimmer pulse over dim */
-.t-shimmer {
-  background: linear-gradient(
-    90deg,
-    rgba(255,255,255,0.06) 25%,
-    rgba(255,255,255,0.18) 50%,
-    rgba(255,255,255,0.06) 75%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.2s infinite;
-}
-
-/* Progress % chip — centered */
-.t-pct {
-  position: absolute;
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  text-shadow: 0 1px 3px rgba(0,0,0,0.6);
-  pointer-events: none;
-  white-space: nowrap;
-}
 
 /* AUTHING spinner */
 .t-spinner {
@@ -358,6 +441,35 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
   cursor: pointer;
 }
 .retry-btn:hover { background: var(--hover); }
+
+/* ── Rename row (IDLE + rename mode on) ──────────────────────── */
+.rename-row { gap: 8px; cursor: default; }
+.rename-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--blue);
+  border-radius: 4px;
+  padding: 4px 8px;
+  outline: none;
+}
+.rename-input:focus { box-shadow: 0 0 0 2px oklch(from var(--blue) l c h / 0.2); }
+.rename-save-btn {
+  flex-shrink: 0;
+  background: var(--blue);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rename-save-btn:hover { opacity: 0.88; }
 
 /* ── Folder picker section ───────────────────────────────────── */
 .picker-section {

@@ -1,15 +1,15 @@
 // ── Domain types ──────────────────────────────────────────────────────────────
 
 export type JobState =
-  | 'IDLE'       // created, waiting for folder selection (picker mode only)
+  | 'IDLE'       // not yet started
   | 'AUTHING'    // acquiring OAuth token
   | 'FETCHING'   // offscreen is fetching the source URL
-  | 'UPLOADING'  // uploading chunks to Drive
+  | 'UPLOADING'  // uploading chunks to cloud storage
   | 'SUCCESS'
   | 'ERROR';
 
 export interface Folder {
-  id: string;   // Drive folder ID; 'root' is not used — null means My Drive root
+  id: string;
   name: string;
 }
 
@@ -19,19 +19,24 @@ export interface Job {
   filename: string;
   mimeType: string;
   state: JobState;
-  progress: number;        // 0–100
-  phase?: 'fetch' | 'upload'; // which phase is currently active
-  indeterminate?: boolean; // true when Content-Length is absent during fetch
-  folderId: string | null; // null = My Drive root
+  progress: number;         // 0–100
+  phase?: 'fetch' | 'upload';
+  indeterminate?: boolean;  // true when Content-Length absent during fetch
+  providerId: string;       // which cloud provider
+  folderId: string | null;  // null = provider root
   folderName: string;
+  pageTitle?: string;       // browser tab title, used as filename fallback
   fileId?: string;
   webViewLink?: string;
+  folderViewLink?: string;  // containing folder URL (provider-specific)
   error?: string;
   retries: number;
 }
 
 export interface Prefs {
-  lastFolder: Folder | null; // the default save destination; null = My Drive root
+  providerId: string;                           // active provider id
+  lastFolders: Record<string, Folder | null>;   // per-provider last folder
+  renameBeforeSave: boolean;                    // show rename input before uploading
 }
 
 // ── Popup → SW messages ───────────────────────────────────────────────────────
@@ -44,7 +49,8 @@ export type PopupMessage =
   | { type: 'CREATE_FOLDER'; name: string; parentId: string | null }
   | { type: 'RETRY_JOB'; jobId: string }
   | { type: 'REMOVE_JOB'; jobId: string }
-  | { type: 'CANCEL_JOB'; jobId: string };
+  | { type: 'CANCEL_JOB'; jobId: string }
+  | { type: 'START_JOB'; jobId: string; filename: string };
 
 export type PopupResponse =
   | { type: 'STATE'; jobs: Job[] }
@@ -54,7 +60,7 @@ export type PopupResponse =
   | { type: 'OK' }
   | { type: 'ERROR'; message: string };
 
-// ── SW → Popup push messages ──────────────────────────────────────────────────
+// ── SW → Popup push ───────────────────────────────────────────────────────────
 
 export interface StatePush { type: 'STATE'; jobs: Job[] }
 
@@ -68,11 +74,11 @@ export interface UploadMsg {
   mimeType: string;
   folderId: string | null;
   token: string;
-  resumeUri?: string;
+  providerId: string;   // which provider to use for upload
 }
 
 export type OffscreenResponse =
-  | { type: 'TYPE_DETECTED'; jobId: string; mimeType: string }
+  | { type: 'TYPE_DETECTED'; jobId: string; mimeType: string; filename?: string }
   | { type: 'PROGRESS'; jobId: string; progress: number; phase: 'fetch' | 'upload'; indeterminate?: boolean }
-  | { type: 'DONE'; jobId: string; fileId: string; webViewLink: string }
+  | { type: 'DONE'; jobId: string; fileId: string; webViewLink: string; folderViewLink: string }
   | { type: 'ERROR'; jobId: string; error: string };

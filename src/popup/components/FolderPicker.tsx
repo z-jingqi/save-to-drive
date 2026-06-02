@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { Folder as FolderIcon, FolderPlus, ChevronRight } from 'lucide-react';
+import { t } from '../../lib/i18n.ts';
 import type { Folder } from '../../lib/types.ts';
 
 interface Crumb {
@@ -9,11 +10,12 @@ interface Crumb {
 
 interface Props {
   initialFolder: Folder | null;
+  rootName?: string; // provider-specific root label, e.g. 'OneDrive', 'My Drive'
   onSelect: (folder: Folder | null) => void;
 }
 
-export function FolderPicker({ initialFolder, onSelect }: Props) {
-  const [crumbs, setCrumbs] = useState<Crumb[]>([{ id: null, name: 'My Drive' }]);
+export function FolderPicker({ initialFolder, rootName = 'My Drive', onSelect }: Props) {
+  const [crumbs, setCrumbs] = useState<Crumb[]>([{ id: null, name: rootName }]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -79,51 +81,53 @@ export function FolderPicker({ initialFolder, onSelect }: Props) {
       {/* Quick-select last used folder */}
       {initialFolder && (
         <div class="quick-select">
-          <span class="quick-label">Last used:</span>
+          <span class="quick-label">{t('folder_last_used')}</span>
           <button class="quick-btn" onClick={() => onSelect(initialFolder)}>
             <FolderIcon size={13} style={{ flexShrink: 0 }} /> {initialFolder.name}
           </button>
         </div>
       )}
 
-      {/* Breadcrumb navigation */}
-      <nav class="breadcrumb" aria-label="Folder path">
-        {crumbs.map((c, i) => (
-          <span key={i} class="crumb-item">
-            {i > 0 && <ChevronRight size={12} class="crumb-sep" />}
-            <button
-              class="crumb-btn"
-              onClick={() => goToCrumb(i)}
-              disabled={i === crumbs.length - 1}
-            >
-              {c.name}
-            </button>
-          </span>
-        ))}
-      </nav>
+      {/* Breadcrumb — only shown once drilled at least one level deep */}
+      {crumbs.length > 1 && (
+        <nav class="breadcrumb" aria-label="Folder path">
+          {crumbs.map((c, i) => (
+            <span key={i} class="crumb-item">
+              {i > 0 && <ChevronRight size={12} class="crumb-sep" />}
+              <button
+                class="crumb-btn"
+                onClick={() => goToCrumb(i)}
+                disabled={i === crumbs.length - 1}
+              >
+                {c.name}
+              </button>
+            </span>
+          ))}
+        </nav>
+      )}
 
       {/* Search */}
       <input
         class="folder-search"
         type="search"
-        placeholder="Search folders…"
+        placeholder={t('folder_search_placeholder')}
         value={query}
         onInput={e => setQuery((e.target as HTMLInputElement).value)}
       />
 
       {/* Folder list */}
       <ul class="folder-list" role="listbox">
-        {loading && <li class="folder-msg">Loading…</li>}
+        {loading && <li class="folder-msg">{t('folder_loading')}</li>}
         {!loading && folders.length === 0 && (
-          <li class="folder-msg folder-empty">No folders here</li>
+          <li class="folder-msg folder-empty">{t('folder_empty')}</li>
         )}
         {!loading && folders.map(f => (
           <li key={f.id} class="folder-item" role="option">
-            <button class="folder-drill" onClick={() => enterFolder(f)} title="Open folder">
+            <button class="folder-drill" onClick={() => enterFolder(f)} title={t('folder_open_title')}>
               <FolderIcon size={14} strokeWidth={1.75} style={{ flexShrink: 0 }} /> {f.name}
             </button>
             <button class="folder-save-btn" onClick={() => onSelect(f)}>
-              Save here
+              {t('folder_save_here')}
             </button>
           </li>
         ))}
@@ -136,7 +140,7 @@ export function FolderPicker({ initialFolder, onSelect }: Props) {
             ref={newNameRef}
             class="new-folder-input"
             type="text"
-            placeholder="Folder name"
+            placeholder={t('folder_name_placeholder')}
             value={newName}
             onInput={e => setNewName((e.target as HTMLInputElement).value)}
             onKeyDown={e => {
@@ -145,22 +149,22 @@ export function FolderPicker({ initialFolder, onSelect }: Props) {
             }}
           />
           <button class="btn-primary" onClick={handleCreate} disabled={loading || !newName.trim()}>
-            Create
+            {t('folder_create')}
           </button>
           <button class="btn-ghost" onClick={() => { setCreating(false); setNewName(''); }}>
-            Cancel
+            {t('popup_cancel')}
           </button>
         </div>
       ) : (
         <button class="new-folder-btn" onClick={() => setCreating(true)}>
-          <FolderPlus size={13} strokeWidth={2} /> New folder
+          <FolderPlus size={13} strokeWidth={2} /> {t('folder_new')}
         </button>
       )}
 
       {/* Confirm: save into current (browsed-to) folder */}
       <div class="picker-confirm">
         <button class="btn-primary btn-full" onClick={confirmCurrent}>
-          Save to <em>{current.name}</em>
+          {t('folder_save_to', current.name)}
         </button>
       </div>
     </div>

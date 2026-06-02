@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 import { X, RotateCcw, ExternalLink } from 'lucide-react';
+import { t } from '../../lib/i18n.ts';
 import type { Job } from '../../lib/types.ts';
 
 // ── File type icons ───────────────────────────────────────────────────────────
@@ -63,43 +64,28 @@ function BaseThumbnail({ job }: { job: Job }) {
 // ── Thumbnail cell with state overlays ────────────────────────────────────────
 
 function ThumbCell({ job }: { job: Job }) {
-  const { state, progress = 0, indeterminate } = job;
-  const isActive = state === 'FETCHING' || state === 'UPLOADING';
-  const phase = state === 'UPLOADING' ? 'upload' : 'fetch';
+  const { state } = job;
 
   return (
     <div class="thumb-wrap">
-      <BaseThumbnail job={job} />
+      <div class="thumb-clip">
+        <BaseThumbnail job={job} />
 
-      {/* AUTHING: full dim + spinner */}
-      {state === 'AUTHING' && (
-        <>
-          <div class="t-overlay t-dim" />
-          <div class="t-spinner" />
-        </>
-      )}
-
-      {/* FETCHING / UPLOADING: fill-reveal */}
-      {isActive && (indeterminate
-        ? <div class="t-overlay t-dim t-shimmer" />
-        : <>
-            <div
-              class={`t-overlay t-fill t-fill-${phase}`}
-              style={{ height: `${100 - progress}%` }}
-            />
-            <span class="t-pct">{progress}%</span>
+        {state === 'AUTHING' && (
+          <>
+            <div class="t-overlay t-dim" />
+            <div class="t-spinner" />
           </>
-      )}
+        )}
 
-      {/* ERROR: red tint + ! */}
-      {state === 'ERROR' && (
-        <>
-          <div class="t-overlay t-dim t-err" />
-          <span class="t-badge-err">!</span>
-        </>
-      )}
+        {state === 'ERROR' && (
+          <>
+            <div class="t-overlay t-dim t-err" />
+            <span class="t-badge-err">!</span>
+          </>
+        )}
+      </div>
 
-      {/* SUCCESS: ✓ springs in outside the thumb border */}
       {state === 'SUCCESS' && <div class="t-check">✓</div>}
     </div>
   );
@@ -108,31 +94,76 @@ function ThumbCell({ job }: { job: Job }) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function statusLabel(job: Job): string {
-  if (job.state === 'AUTHING')   return 'Signing in…';
-  if (job.state === 'FETCHING')  return job.indeterminate ? 'Fetching…' : `Fetching… ${job.progress}%`;
-  if (job.state === 'UPLOADING') return `Uploading… ${job.progress}%`;
+  if (job.state === 'AUTHING')   return t('job_signing_in');
+  if (job.state === 'FETCHING')  return job.indeterminate ? t('job_fetching') : t('job_fetching_pct', String(job.progress));
+  if (job.state === 'UPLOADING') return t('job_uploading_pct', String(job.progress));
   return '';
 }
 
-function driveFolderUrl(job: Job): string {
-  return job.folderId
-    ? `https://drive.google.com/drive/folders/${job.folderId}`
-    : 'https://drive.google.com/drive/my-drive';
+function folderUrl(job: Job): string {
+  return job.folderViewLink ?? (
+    job.folderId
+      ? `https://drive.google.com/drive/folders/${job.folderId}`
+      : 'https://drive.google.com/drive/my-drive'
+  );
 }
 
 const openInDrive  = (url: string)   => chrome.tabs.create({ url });
 const removeJob    = (jobId: string)  => chrome.runtime.sendMessage({ type: 'REMOVE_JOB', jobId });
 const cancelJob    = (jobId: string)  => chrome.runtime.sendMessage({ type: 'CANCEL_JOB', jobId });
 const retryJob     = (jobId: string)  => chrome.runtime.sendMessage({ type: 'RETRY_JOB', jobId });
+const startJob     = (jobId: string, filename: string) =>
+  chrome.runtime.sendMessage({ type: 'START_JOB', jobId, filename });
+
+// ── Rename row (IDLE state, rename mode on) ───────────────────────────────────
+
+function RenameRow({ job }: { job: Job }) {
+  const [name, setName] = useState(job.filename);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { inputRef.current?.focus(); inputRef.current?.select(); }, []);
+
+  const confirm = () => {
+    const trimmed = name.trim() || job.filename;
+    startJob(job.id, trimmed);
+  };
+
+  return (
+    <li class="job-row job-idle rename-row">
+      <ThumbCell job={job} />
+      <input
+        ref={inputRef}
+        class="rename-input"
+        value={name}
+        onInput={e => setName((e.target as HTMLInputElement).value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') confirm();
+          if (e.key === 'Escape') removeJob(job.id);
+        }}
+        placeholder={job.filename}
+      />
+      <button class="rename-save-btn" onClick={confirm}>
+        {t('job_save_start')}
+      </button>
+      <button class="job-remove" title={t('job_remove')} onClick={() => removeJob(job.id)}>
+        <X size={13} strokeWidth={2.5} />
+      </button>
+    </li>
+  );
+}
 
 // ── Job list ──────────────────────────────────────────────────────────────────
 
-interface Props { jobs: Job[] }
+interface Props { jobs: Job[]; renameBeforeSave: boolean }
 
-export function JobList({ jobs }: Props) {
+export function JobList({ jobs, renameBeforeSave }: Props) {
   return (
     <ul class="job-list">
       {jobs.map(job => {
+        if (job.state === 'IDLE' && renameBeforeSave) {
+          return <RenameRow key={job.id} job={job} />;
+        }
+
         const isSuccess = job.state === 'SUCCESS';
         const isError   = job.state === 'ERROR';
         const isActive  = job.state === 'AUTHING' || job.state === 'FETCHING' || job.state === 'UPLOADING';
@@ -141,18 +172,16 @@ export function JobList({ jobs }: Props) {
           <li
             key={job.id}
             class={`job-row job-${job.state.toLowerCase()}${isSuccess ? ' job-clickable' : ''}`}
-            onClick={isSuccess ? () => openInDrive(driveFolderUrl(job)) : undefined}
-            title={isSuccess ? 'Click to open containing folder in Google Drive' : undefined}
+            onClick={isSuccess ? () => openInDrive(folderUrl(job)) : undefined}
+            title={isSuccess ? t('job_click_to_open') : undefined}
           >
-            {/* Thumbnail + state overlays */}
             <ThumbCell job={job} />
 
-            {/* Info column */}
             <div class="job-content">
               <div class="job-meta">
                 <span class="job-name" title={job.filename}>{job.filename}</span>
                 <span class={`job-folder${isSuccess ? ' job-folder-saved' : ''}`}>
-                  {isSuccess ? `Saved · ${job.folderName}` : job.folderName}
+                  {isSuccess ? t('job_saved', job.folderName) : job.folderName}
                 </span>
               </div>
 
@@ -164,33 +193,29 @@ export function JobList({ jobs }: Props) {
 
               {isSuccess && (
                 <span class="view-hint">
-                  Open folder in Drive <ExternalLink size={11} strokeWidth={2.5} style={{ verticalAlign: 'middle', marginBottom: '1px' }} />
+                  {t('job_open_folder')} <ExternalLink size={11} strokeWidth={2.5} style={{ verticalAlign: 'middle', marginBottom: '1px' }} />
                 </span>
               )}
 
               {isError && (
                 <div class="error-row">
                   <span class="error-text" title={job.error}>
-                    {job.error ?? 'Upload failed'}
+                    {job.error ?? t('job_upload_failed')}
                   </span>
-                  <button
-                    class="retry-btn"
-                    onClick={(e) => { e.stopPropagation(); retryJob(job.id); }}
-                  >
-                    <RotateCcw size={11} strokeWidth={2.5} /> Retry
+                  <button class="retry-btn" onClick={(e) => { e.stopPropagation(); retryJob(job.id); }}>
+                    <RotateCcw size={11} strokeWidth={2.5} /> {t('job_retry')}
                   </button>
                 </div>
               )}
             </div>
 
-            {/* Dismiss / cancel button — always × but wired differently */}
             {(isSuccess || isError) && (
-              <button class="job-remove" title="Remove" onClick={(e) => { e.stopPropagation(); removeJob(job.id); }}>
+              <button class="job-remove" title={t('job_remove')} onClick={(e) => { e.stopPropagation(); removeJob(job.id); }}>
                 <X size={13} strokeWidth={2.5} />
               </button>
             )}
             {isActive && (
-              <button class="job-remove job-cancel" title="Cancel" onClick={(e) => { e.stopPropagation(); cancelJob(job.id); }}>
+              <button class="job-remove job-cancel" title={t('job_cancel')} onClick={(e) => { e.stopPropagation(); cancelJob(job.id); }}>
                 <X size={13} strokeWidth={2.5} />
               </button>
             )}

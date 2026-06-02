@@ -1,8 +1,7 @@
-import { getToken } from '../lib/auth.ts';
 import type { Job, OffscreenResponse } from '../lib/types.ts';
+import { getProvider } from '../providers/registry.ts';
 import { getJob, updateJob } from './state-manager.ts';
 
-// Path to the offscreen document as it appears in the built extension
 const OFFSCREEN_PATH = 'src/offscreen/index.html';
 
 async function ensureOffscreen(): Promise<void> {
@@ -11,24 +10,26 @@ async function ensureOffscreen(): Promise<void> {
     await chrome.offscreen.createDocument({
       url: chrome.runtime.getURL(OFFSCREEN_PATH),
       reasons: [chrome.offscreen.Reason.BLOBS],
-      justification: 'Fetch source file content and run chunked Drive upload with XHR progress events',
+      justification: 'Fetch source file content and run chunked upload with XHR progress events',
     });
   }
 }
 
 /**
- * Orchestrate a single job: auth → spin up offscreen → hand off for upload.
- * Offscreen posts back PROGRESS / DONE / ERROR messages handled by onOffscreenMessage().
+ * Orchestrate a single job: auth → offscreen → upload.
+ * Auth is provider-specific; offscreen handles fetch + provider upload.
  */
 export async function runJob(jobId: string): Promise<void> {
   const job = getJob(jobId);
   if (!job) return;
 
-  // 1. Acquire OAuth token
+  const provider = getProvider(job.providerId);
+
+  // 1. Auth via the job's provider
   updateJob(jobId, { state: 'AUTHING' });
   let token: string;
   try {
-    token = await getToken(true);
+    token = await provider.getToken(true);
   } catch (err) {
     updateJob(jobId, { state: 'ERROR', error: String(err) });
     return;
@@ -43,7 +44,7 @@ export async function runJob(jobId: string): Promise<void> {
     return;
   }
 
-  // 3. Tell offscreen to fetch + upload — progress comes back as messages
+  // 3. Relay to offscreen — progress comes back as port messages
   chrome.runtime.sendMessage({
     type: 'UPLOAD',
     jobId,
@@ -52,13 +53,10 @@ export async function runJob(jobId: string): Promise<void> {
     mimeType: job.mimeType,
     folderId: job.folderId,
     token,
+    providerId: job.providerId,
   });
 }
 
-/**
- * Handle PROGRESS / DONE / ERROR messages from the offscreen document.
- * `notifySuccess` is called by background/index.ts to show the notification.
- */
 export function onOffscreenMessage(
   msg: OffscreenResponse,
   notifySuccess: (job: Job) => void,
@@ -69,9 +67,7 @@ export function onOffscreenMessage(
       const { jobId, progress, phase, indeterminate } = msg as Extract<OffscreenResponse, { type: 'PROGRESS' }>;
       updateJob(jobId, {
         state: phase === 'fetch' ? 'FETCHING' : 'UPLOADING',
-        progress,
-        phase,
-        indeterminate,
+        progress, phase, indeterminate,
       });
       break;
     }
@@ -81,6 +77,7 @@ export function onOffscreenMessage(
         state: 'SUCCESS',
         fileId: msg.fileId,
         webViewLink: msg.webViewLink,
+        folderViewLink: msg.folderViewLink,
         progress: 100,
       });
       const job = getJob(msg.jobId);
@@ -91,7 +88,6 @@ export function onOffscreenMessage(
     case 'ERROR': {
       const job = getJob(msg.jobId);
       if (job && job.retries < 2) {
-        // Retry: re-auth from scratch (cached token may be stale)
         updateJob(msg.jobId, { retries: job.retries + 1 });
         enqueue(msg.jobId, runJob);
       } else {

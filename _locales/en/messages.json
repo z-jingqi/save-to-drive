@@ -1,0 +1,84 @@
+{
+  "ext_name":        { "message": "Save to Drive" },
+  "ext_description": { "message": "Save any link or image directly to cloud storage — right from the right-click menu." },
+
+  "context_menu_title":   { "message": "Save to Drive" },
+  "context_menu_save_to": {
+    "message": "Save to $PROVIDER$",
+    "placeholders": { "provider": { "content": "$1", "example": "Google Drive" } }
+  },
+  "context_menu_save_to_folder": {
+    "message": "Save to $PROVIDER$ › $FOLDER$",
+    "placeholders": {
+      "provider": { "content": "$1", "example": "Google Drive" },
+      "folder":   { "content": "$2", "example": "My Drive" }
+    }
+  },
+  "popup_header_title":   { "message": "Save to Drive" },
+  "popup_provider_label": { "message": "Provider" },
+  "popup_setup_providers":{ "message": "Set up more providers…" },
+  "popup_rename_label":   { "message": "Rename before saving" },
+  "popup_change":         { "message": "Change" },
+  "popup_cancel":         { "message": "Cancel" },
+  "popup_empty_state":    { "message": "Right-click any link or image and choose Save to Drive." },
+
+  "job_signing_in":   { "message": "Signing in…" },
+  "job_fetching":     { "message": "Fetching…" },
+  "job_fetching_pct": {
+    "message": "Fetching… $PCT$%",
+    "placeholders": { "pct": { "content": "$1", "example": "47" } }
+  },
+  "job_uploading_pct": {
+    "message": "Uploading… $PCT$%",
+    "placeholders": { "pct": { "content": "$1", "example": "73" } }
+  },
+  "job_saved": {
+    "message": "Saved · $FOLDER$",
+    "placeholders": { "folder": { "content": "$1", "example": "My Drive" } }
+  },
+  "job_open_folder":   { "message": "Open folder in Drive ↗" },
+  "job_upload_failed": { "message": "Upload failed" },
+  "job_retry":         { "message": "Retry" },
+  "job_remove":        { "message": "Remove" },
+  "job_cancel":        { "message": "Cancel" },
+  "job_save_start":    { "message": "Save" },
+  "job_click_to_open": { "message": "Click to open containing folder" },
+
+  "folder_last_used":        { "message": "Last used:" },
+  "folder_search_placeholder":{ "message": "Search folders…" },
+  "folder_loading":          { "message": "Loading…" },
+  "folder_empty":            { "message": "No folders here" },
+  "folder_open_title":       { "message": "Open folder" },
+  "folder_save_here":        { "message": "Save here" },
+  "folder_name_placeholder": { "message": "Folder name" },
+  "folder_create":           { "message": "Create" },
+  "folder_new":              { "message": "New folder" },
+  "folder_reset":            { "message": "Default" },
+  "folder_save_to": {
+    "message": "Save to $NAME$",
+    "placeholders": { "name": { "content": "$1", "example": "My Drive" } }
+  },
+
+  "options_title":       { "message": "Save to Drive — Providers" },
+  "options_hint":        { "message": "Enable providers here for testing. Only enabled providers appear in the popup. All providers are off by default except Google Drive." },
+  "options_always_on":   { "message": "always on" },
+  "options_signed_in":   { "message": "✓ Signed in" },
+  "options_signed_in_as":{ "message": "✓ Signed in as $EMAIL$", "placeholders": { "email": { "content": "$1", "example": "user@example.com" } } },
+  "options_not_signed_in":{ "message": "Not signed in" },
+  "options_sign_out":    { "message": "Sign out" },
+  "options_sign_in":     { "message": "Sign in" },
+  "options_signing_in":  { "message": "Signing in…" },
+
+  "notif_title": {
+    "message": "Saved to $PROVIDER$",
+    "placeholders": { "provider": { "content": "$1", "example": "Google Drive" } }
+  },
+  "notif_body": {
+    "message": "$FILENAME$  →  $FOLDER$",
+    "placeholders": {
+      "filename": { "content": "$1", "example": "photo.jpg" },
+      "folder":   { "content": "$2", "example": "My Drive" }
+    }
+  },
+  "notif_context": { "message": "Click to open folder" }
+}

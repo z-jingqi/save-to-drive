@@ -1,0 +1,84 @@
+{
+  "ext_name":        { "message": "クラウドに保存" },
+  "ext_description": { "message": "右クリックメニューから直接、リンクや画像をクラウドに保存できます。" },
+
+  "context_menu_title":   { "message": "クラウドに保存" },
+  "context_menu_save_to": {
+    "message": "$PROVIDER$ に保存",
+    "placeholders": { "provider": { "content": "$1" } }
+  },
+  "context_menu_save_to_folder": {
+    "message": "$PROVIDER$ › $FOLDER$ に保存",
+    "placeholders": {
+      "provider": { "content": "$1" },
+      "folder":   { "content": "$2" }
+    }
+  },
+  "popup_header_title":   { "message": "クラウドに保存" },
+  "popup_provider_label": { "message": "サービス" },
+  "popup_setup_providers":{ "message": "サービスを追加…" },
+  "popup_rename_label":   { "message": "保存前にリネーム" },
+  "popup_change":         { "message": "変更" },
+  "popup_cancel":         { "message": "キャンセル" },
+  "popup_empty_state":    { "message": "リンクや画像を右クリックして「クラウドに保存」を選択してください。" },
+
+  "job_signing_in":   { "message": "サインイン中…" },
+  "job_fetching":     { "message": "取得中…" },
+  "job_fetching_pct": {
+    "message": "取得中… $PCT$%",
+    "placeholders": { "pct": { "content": "$1" } }
+  },
+  "job_uploading_pct": {
+    "message": "アップロード中… $PCT$%",
+    "placeholders": { "pct": { "content": "$1" } }
+  },
+  "job_saved": {
+    "message": "$FOLDER$ に保存しました",
+    "placeholders": { "folder": { "content": "$1" } }
+  },
+  "job_open_folder":   { "message": "フォルダを開く ↗" },
+  "job_upload_failed": { "message": "アップロード失敗" },
+  "job_retry":         { "message": "再試行" },
+  "job_remove":        { "message": "削除" },
+  "job_cancel":        { "message": "キャンセル" },
+  "job_save_start":    { "message": "保存" },
+  "job_click_to_open": { "message": "フォルダを開く" },
+
+  "folder_last_used":        { "message": "前回:" },
+  "folder_search_placeholder":{ "message": "フォルダを検索…" },
+  "folder_loading":          { "message": "読み込み中…" },
+  "folder_empty":            { "message": "フォルダがありません" },
+  "folder_open_title":       { "message": "フォルダを開く" },
+  "folder_save_here":        { "message": "ここに保存" },
+  "folder_name_placeholder": { "message": "フォルダ名" },
+  "folder_create":           { "message": "作成" },
+  "folder_new":              { "message": "新しいフォルダ" },
+  "folder_reset":            { "message": "デフォルト" },
+  "folder_save_to": {
+    "message": "$NAME$ に保存",
+    "placeholders": { "name": { "content": "$1" } }
+  },
+
+  "options_title":       { "message": "クラウドに保存 — サービス" },
+  "options_hint":        { "message": "テスト用にサービスを有効にしてください。有効なサービスのみポップアップに表示されます。Google Drive 以外は初期状態で無効です。" },
+  "options_always_on":   { "message": "常に有効" },
+  "options_signed_in":   { "message": "✓ サインイン済み" },
+  "options_signed_in_as":{ "message": "✓ $EMAIL$ でサインイン済み", "placeholders": { "email": { "content": "$1" } } },
+  "options_not_signed_in":{ "message": "サインインしていません" },
+  "options_sign_out":    { "message": "サインアウト" },
+  "options_sign_in":     { "message": "サインイン" },
+  "options_signing_in":  { "message": "サインイン中…" },
+
+  "notif_title": {
+    "message": "$PROVIDER$ に保存しました",
+    "placeholders": { "provider": { "content": "$1" } }
+  },
+  "notif_body": {
+    "message": "$FILENAME$  →  $FOLDER$",
+    "placeholders": {
+      "filename": { "content": "$1" },
+      "folder":   { "content": "$2" }
+    }
+  },
+  "notif_context": { "message": "フォルダを開く" }
+}
