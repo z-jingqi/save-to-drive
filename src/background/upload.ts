@@ -1,6 +1,6 @@
 import type { Job, OffscreenResponse } from '../lib/types.ts';
 import { getProvider } from '../providers/registry.ts';
-import { getJob, updateJob } from './state-manager.ts';
+import { getJob, updateJob, addToHistory, incrementSavesToday } from './state-manager.ts';
 
 const OFFSCREEN_PATH = 'src/offscreen/index.html';
 
@@ -23,7 +23,13 @@ export async function runJob(jobId: string): Promise<void> {
   const job = getJob(jobId);
   if (!job) return;
 
-  const provider = getProvider(job.providerId);
+  let provider;
+  try {
+    provider = getProvider(job.providerId);
+  } catch (err) {
+    updateJob(jobId, { state: 'ERROR', error: String(err) });
+    return;
+  }
 
   // 1. Auth via the job's provider
   updateJob(jobId, { state: 'AUTHING' });
@@ -50,6 +56,7 @@ export async function runJob(jobId: string): Promise<void> {
     jobId,
     url: job.url,
     filename: job.filename,
+    filenameLocked: job.filenameLocked ?? false,
     mimeType: job.mimeType,
     folderId: job.folderId,
     token,
@@ -81,15 +88,30 @@ export function onOffscreenMessage(
         progress: 100,
       });
       const job = getJob(msg.jobId);
-      if (job) notifySuccess(job);
+      if (job) {
+        notifySuccess(job);
+        addToHistory({
+          id: job.id,
+          url: job.url,
+          filename: job.filename,
+          folderName: job.folderName,
+          folderViewLink: job.folderViewLink ?? '',
+          webViewLink: job.webViewLink ?? '',
+          savedAt: Date.now(),
+        });
+        incrementSavesToday();
+      }
       break;
     }
 
     case 'ERROR': {
       const job = getJob(msg.jobId);
       if (job && job.retries < 2) {
-        updateJob(msg.jobId, { retries: job.retries + 1 });
-        enqueue(msg.jobId, runJob);
+        const nextRetry = job.retries + 1;
+        updateJob(msg.jobId, { retries: nextRetry });
+        // Exponential backoff: 2s then 5s (SW may sleep before 5s fires — acceptable)
+        const delay = nextRetry === 1 ? 2000 : 5000;
+        setTimeout(() => enqueue(msg.jobId, runJob), delay);
       } else {
         updateJob(msg.jobId, { state: 'ERROR', error: msg.error });
       }

@@ -4,29 +4,30 @@ import { getProvider } from '../providers/registry.ts';
 import {
   addJob, enqueue, getJobs, getPrefs, getPrefsSync, initPrefs,
   setPrefs, setLastFolderForProvider, getLastFolder, updateJob, removeJob,
+  getHistory, clearHistory, initSavesToday,
 } from './state-manager.ts';
 import { runJob, onOffscreenMessage } from './upload.ts';
 
-// Warm the prefs cache, then sync the context menu title to the active provider
-initPrefs().then(() => syncContextMenuTitle());
+// Warm the prefs cache, sync context menu, load daily save count
+initPrefs().then(() => { syncContextMenuTitle(); return initSavesToday(); }).catch(console.error);
 
 // ── Context menu registration ─────────────────────────────────────────────────
 
-chrome.runtime.onInstalled.addListener(() => syncContextMenuTitle());
 
-/** Create-or-update the context menu label to match the active provider + folder. */
+/** Rebuild the context menu item to match the active provider + folder. */
 function syncContextMenuTitle(): void {
-  const prefs    = getPrefsSync();
-  const provider = getProvider(prefs.providerId);
-  const folder     = getLastFolder(prefs.providerId);
-  const rawFolder  = folder?.name ?? provider.rootFolderName;
-  const folderName = rawFolder.length > 28 ? rawFolder.slice(0, 26) + '…' : rawFolder;
-  const title      = t('context_menu_save_to_folder', provider.name, folderName);
-  chrome.contextMenus.update('save-to-drive', { title }, () => {
-    if (chrome.runtime.lastError) {
+  try {
+    const prefs      = getPrefsSync();
+    const provider   = getProvider(prefs.providerId);
+    const folder     = getLastFolder(prefs.providerId);
+    const rawFolder  = folder?.name ?? provider.rootFolderName;
+    const folderName = rawFolder.length > 28 ? rawFolder.slice(0, 26) + '…' : rawFolder;
+    const title      = t('context_menu_save_to_folder', provider.name, folderName);
+    // removeAll always succeeds (no-op if empty), eliminating the update/create race on reload
+    chrome.contextMenus.removeAll(() => {
       chrome.contextMenus.create({ id: 'save-to-drive', title, contexts: ['link', 'image'] });
-    }
-  });
+    });
+  } catch (err) { console.error('syncContextMenuTitle', err); }
 }
 
 // ── Context menu click ────────────────────────────────────────────────────────
@@ -39,7 +40,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   const pageTitle = tab?.title;
   const filename = inferFilename(url, pageTitle);
   const lastFolder = getLastFolder(cached.providerId);
-  const providerName = getProvider(cached.providerId).name;
+  const providerName = (() => { try { return getProvider(cached.providerId).name; } catch { return ''; } })();
 
   const job: Job = {
     id: crypto.randomUUID(),
@@ -74,8 +75,19 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       folderId: folder?.id ?? null,
       folderName: folder?.name ?? getProvider(providerId).name,
     });
-    // If rename mode is on, leave job in IDLE — popup sends START_JOB to begin
-    if (!prefs.renameBeforeSave) enqueue(job.id, runJob);
+    // Duplicate detection — flag if same URL was previously saved, and copy
+    // the prior file/folder links so the confirm row can offer a "view" button.
+    const hist = await getHistory();
+    const dup = hist.find(e => e.url === url);
+    if (dup) {
+      updateJob(job.id, {
+        isDuplicate: true,
+        webViewLink:   dup.webViewLink   || undefined,
+        folderViewLink: dup.folderViewLink || undefined,
+      });
+    }
+    // Leave IDLE if: rename mode on, OR duplicate (needs user confirmation)
+    if (!dup && !prefs.renameBeforeSave) enqueue(job.id, runJob);
   });
 });
 
@@ -171,8 +183,17 @@ async function handlePopupMessage(msg: PopupMessage, send: (r: unknown) => void)
       }
 
       case 'START_JOB':
-        updateJob(msg.jobId, { filename: msg.filename });
+        updateJob(msg.jobId, { filename: msg.filename, filenameLocked: true });
         enqueue(msg.jobId, runJob);
+        send({ type: 'OK' });
+        break;
+
+      case 'GET_HISTORY':
+        send({ type: 'HISTORY', entries: await getHistory() });
+        break;
+
+      case 'CLEAR_HISTORY':
+        await clearHistory();
         send({ type: 'OK' });
         break;
 
@@ -208,6 +229,8 @@ async function handlePopupMessage(msg: PopupMessage, send: (r: unknown) => void)
 const notifLinks = new Map<string, string>();
 
 function showSavedNotification(job: Job): void {
+  try {
+  if (!getPrefsSync().notifications) return;
   const notifId = `std-${job.id}`;
   // Use provider-specific folder URL from the job (set by offscreen on completion)
   const link = job.folderViewLink ?? getProvider(job.providerId).folderUrl(job.folderId);
@@ -221,6 +244,7 @@ function showSavedNotification(job: Job): void {
     contextMessage: t('notif_context'),
     isClickable: true,
   });
+  } catch (err) { console.error('showSavedNotification', err); }
 }
 
 chrome.notifications.onClicked.addListener((notifId) => {

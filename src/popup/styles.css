@@ -56,8 +56,26 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
   border-bottom: 1px solid var(--border);
 }
 
-.header-brand { display: flex; align-items: center; gap: 7px; }
-.header-title { font-weight: 600; font-size: 14px; }
+.header-brand { display: flex; align-items: center; }
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-settings-btn {
+  background: none;
+  border: none;
+  padding: 4px;
+  color: var(--sub);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+.header-settings-btn:hover { color: var(--text); background: var(--hover); }
 
 .rename-switch {
   display: flex;
@@ -94,44 +112,7 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
 .rename-switch input:checked ~ .rename-switch-track { background: var(--blue); }
 .rename-switch input:checked ~ .rename-switch-track::after { left: 14px; }
 
-/* ── Provider dropdown ───────────────────────────────────────── */
-.provider-row {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 6px 14px;
-  border-bottom: 1px solid var(--border);
-  background: var(--hover);
-}
 
-.provider-label {
-  font-size: 11px;
-  color: var(--sub);
-  flex-shrink: 0;
-}
-
-.provider-select-wrap {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.provider-select-icon { flex-shrink: 0; }
-
-.provider-select {
-  width: 112px;
-  font-size: 12px;
-  font-family: inherit;
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 3px 6px;
-  cursor: pointer;
-  outline: none;
-}
-.provider-select:focus { border-color: var(--blue); }
 
 /* ── Default folder row ──────────────────────────────────────── */
 .folder-setting {
@@ -200,6 +181,107 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
   color: var(--sub);
   line-height: 1.5;
   text-align: center;
+}
+
+/* ── History list ────────────────────────────────────────────── */
+.history-section { display: flex; flex-direction: column; }
+
+.history-header { padding: 8px 14px 4px; }
+.history-title { font-size: 11px; color: var(--sub); font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
+
+.history-list { list-style: none; max-height: 180px; overflow-y: auto; }
+
+.history-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.history-row:hover { background: var(--hover); }
+.history-row:last-child { border-bottom: none; }
+
+.history-filename {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* button reset — element is now a <button> */
+  background: none; border: none; padding: 0; font-family: inherit; text-align: left;
+}
+
+.history-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.history-folder {
+  font-size: 11px; color: var(--sub);
+  background: none; border: none; padding: 0; font-family: inherit;
+  cursor: pointer;
+  max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.history-folder:hover { color: var(--blue); text-decoration: underline; }
+.history-divider { font-size: 10px; color: var(--border); }
+.history-time { font-size: 11px; color: var(--sub); opacity: 0.7; width: 6em; text-align: right; flex-shrink: 0; }
+
+.history-footer { padding: 5px 14px 8px; display: flex; justify-content: flex-end; }
+.history-clear-btn {
+  background: none; border: none; font-size: 11px; color: var(--sub);
+  cursor: pointer; padding: 2px 4px; border-radius: 3px;
+}
+.history-clear-btn:hover { color: var(--red); background: var(--hover); }
+
+
+/* ── Duplicate confirm row ───────────────────────────────────── */
+.duplicate-confirm-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.duplicate-confirm-tag-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.duplicate-confirm-tag-clickable {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  cursor: pointer;
+  color: #92400e;
+  opacity: 0.85;
+}
+@media (prefers-color-scheme: dark) {
+  .duplicate-confirm-tag-clickable { color: #fde68a; }
+}
+.duplicate-confirm-tag-clickable:hover { opacity: 1; }
+.duplicate-confirm-msg {
+  font-size: 11px;
+  font-weight: 600;
+  color: #92400e;
+}
+@media (prefers-color-scheme: dark) {
+  .duplicate-confirm-msg { color: #fde68a; }
+}
+.duplicate-confirm-filename {
+  font-size: 12px;
+  color: var(--sub);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* button reset — element is now a <button> */
+  background: none; border: none; padding: 0; font-family: inherit; text-align: left;
+  max-width: 100%;
 }
 
 /* ── Job list ────────────────────────────────────────────────── */
@@ -422,7 +504,15 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
 
 .status-text      { color: var(--sub); font-size: 11px; }
 .status-upload    { color: var(--blue); }
-.view-hint        { color: var(--blue); font-size: 11px; }
+.view-hint        { color: var(--blue); font-size: 11px; display: inline-flex; align-items: center; gap: 5px; }
+.hint-link        { background: none; border: none; padding: 0; font: inherit; font-size: 11px; color: var(--blue); cursor: pointer; }
+.hint-link:hover  { text-decoration: underline; }
+.hint-link-sub    { color: var(--sub); }
+.hint-sep         { color: var(--border); }
+
+/* Shared file-link style — used on filenames that open the file in Drive */
+.file-link        { color: inherit; cursor: pointer; }
+.file-link:hover  { color: var(--blue); text-decoration: underline; }
 .job-folder-saved { color: var(--green); }
 
 .error-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -443,7 +533,7 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
 .retry-btn:hover { background: var(--hover); }
 
 /* ── Rename row (IDLE + rename mode on) ──────────────────────── */
-.rename-row { gap: 8px; cursor: default; }
+.rename-row { gap: 8px; cursor: default; align-items: center; }
 .rename-input {
   flex: 1;
   min-width: 0;
@@ -470,6 +560,17 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
   white-space: nowrap;
 }
 .rename-save-btn:hover { opacity: 0.88; }
+.rename-cancel-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 4px;
+  color: var(--sub);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+.rename-cancel-btn:hover { color: var(--text); }
 
 /* ── Folder picker section ───────────────────────────────────── */
 .picker-section {

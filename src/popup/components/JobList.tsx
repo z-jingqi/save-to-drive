@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { X, RotateCcw, ExternalLink } from 'lucide-react';
+import { X, RotateCcw, ExternalLink, Eye } from 'lucide-react';
 import { t } from '../../lib/i18n.ts';
 import type { Job } from '../../lib/types.ts';
 
@@ -108,12 +108,45 @@ function folderUrl(job: Job): string {
   );
 }
 
+function fileUrl(job: Job): string {
+  return job.webViewLink || folderUrl(job);  // || guards against empty string
+}
+
 const openInDrive  = (url: string)   => chrome.tabs.create({ url });
 const removeJob    = (jobId: string)  => chrome.runtime.sendMessage({ type: 'REMOVE_JOB', jobId });
 const cancelJob    = (jobId: string)  => chrome.runtime.sendMessage({ type: 'CANCEL_JOB', jobId });
 const retryJob     = (jobId: string)  => chrome.runtime.sendMessage({ type: 'RETRY_JOB', jobId });
 const startJob     = (jobId: string, filename: string) =>
   chrome.runtime.sendMessage({ type: 'START_JOB', jobId, filename });
+
+// ── Duplicate confirm row (IDLE state, duplicate detected, rename mode off) ───
+
+function DuplicateConfirmRow({ job, onConfirm }: { job: Job; onConfirm: () => void }) {
+  return (
+    <li class="job-row job-idle rename-row">
+      <ThumbCell job={job} />
+      <div class="duplicate-confirm-content">
+        {fileUrl(job) ? (
+          <button class="duplicate-confirm-tag-row duplicate-confirm-tag-clickable" title={t('job_open_file')} onClick={() => openInDrive(fileUrl(job))}>
+            <span class="duplicate-confirm-msg">{t('job_duplicate_warning')}</span>
+            <Eye size={12} strokeWidth={2} />
+          </button>
+        ) : (
+          <div class="duplicate-confirm-tag-row">
+            <span class="duplicate-confirm-msg">{t('job_duplicate_warning')}</span>
+          </div>
+        )}
+        <span class="duplicate-confirm-filename" title={job.filename}>{job.filename}</span>
+      </div>
+      <button class="rename-save-btn" onClick={onConfirm}>
+        {t('job_save_anyway')}
+      </button>
+      <button class="rename-cancel-btn" title={t('popup_cancel')} onClick={() => removeJob(job.id)}>
+        <X size={13} strokeWidth={2.5} />
+      </button>
+    </li>
+  );
+}
 
 // ── Rename row (IDLE state, rename mode on) ───────────────────────────────────
 
@@ -145,7 +178,7 @@ function RenameRow({ job }: { job: Job }) {
       <button class="rename-save-btn" onClick={confirm}>
         {t('job_save_start')}
       </button>
-      <button class="job-remove" title={t('job_remove')} onClick={() => removeJob(job.id)}>
+      <button class="rename-cancel-btn" title={t('popup_cancel')} onClick={() => removeJob(job.id)}>
         <X size={13} strokeWidth={2.5} />
       </button>
     </li>
@@ -157,9 +190,29 @@ function RenameRow({ job }: { job: Job }) {
 interface Props { jobs: Job[]; renameBeforeSave: boolean }
 
 export function JobList({ jobs, renameBeforeSave }: Props) {
+  const [confirmedDuplicateIds, setConfirmedDuplicateIds] = useState<string[]>([]);
+  const confirmDuplicate = (id: string) =>
+    setConfirmedDuplicateIds(prev => [...prev, id]);
+
+  // When rename is toggled OFF, auto-start any duplicate job the user already confirmed
+  // (clicked "Save anyway"). App.tsx handles non-duplicate IDLE jobs; this covers
+  // confirmed duplicates that were in RenameRow and would otherwise get stuck.
+  useEffect(() => {
+    if (renameBeforeSave) return;
+    jobs
+      .filter(j => j.state === 'IDLE' && j.isDuplicate && confirmedDuplicateIds.includes(j.id))
+      .forEach(j => startJob(j.id, j.filename));
+  }, [renameBeforeSave]);
+
   return (
     <ul class="job-list">
       {jobs.map(job => {
+        if (job.state === 'IDLE' && job.isDuplicate && !confirmedDuplicateIds.includes(job.id)) {
+          const onConfirm = renameBeforeSave
+            ? () => confirmDuplicate(job.id)
+            : () => startJob(job.id, job.filename);
+          return <DuplicateConfirmRow key={job.id} job={job} onConfirm={onConfirm} />;
+        }
         if (job.state === 'IDLE' && renameBeforeSave) {
           return <RenameRow key={job.id} job={job} />;
         }
@@ -172,14 +225,16 @@ export function JobList({ jobs, renameBeforeSave }: Props) {
           <li
             key={job.id}
             class={`job-row job-${job.state.toLowerCase()}${isSuccess ? ' job-clickable' : ''}`}
-            onClick={isSuccess ? () => openInDrive(folderUrl(job)) : undefined}
+            onClick={isSuccess ? () => openInDrive(fileUrl(job)) : undefined}
             title={isSuccess ? t('job_click_to_open') : undefined}
           >
             <ThumbCell job={job} />
 
             <div class="job-content">
               <div class="job-meta">
-                <span class="job-name" title={job.filename}>{job.filename}</span>
+                <span class="job-name" title={job.filename}>
+                  {job.filename}
+                </span>
                 <span class={`job-folder${isSuccess ? ' job-folder-saved' : ''}`}>
                   {isSuccess ? t('job_saved', job.folderName) : job.folderName}
                 </span>
@@ -193,7 +248,13 @@ export function JobList({ jobs, renameBeforeSave }: Props) {
 
               {isSuccess && (
                 <span class="view-hint">
-                  {t('job_open_folder')} <ExternalLink size={11} strokeWidth={2.5} style={{ verticalAlign: 'middle', marginBottom: '1px' }} />
+                  <button class="hint-link" onClick={(e) => { e.stopPropagation(); openInDrive(fileUrl(job)); }}>
+                    {t('job_open_file')} <ExternalLink size={11} strokeWidth={2.5} style={{ verticalAlign: 'middle', marginBottom: '1px' }} />
+                  </button>
+                  <span class="hint-sep">·</span>
+                  <button class="hint-link hint-link-sub" onClick={(e) => { e.stopPropagation(); openInDrive(folderUrl(job)); }}>
+                    {t('job_open_folder')}
+                  </button>
                 </span>
               )}
 

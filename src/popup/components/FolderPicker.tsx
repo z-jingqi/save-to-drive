@@ -63,10 +63,10 @@ export function FolderPicker({ initialFolder, rootName = 'My Drive', onSelect }:
       { type: 'CREATE_FOLDER', name, parentId: current.id },
       (res) => {
         setLoading(false);
+        setCreating(false);
+        setNewName('');
         if (res?.type === 'FOLDER_CREATED') {
-          setFolders(prev => [...prev, res.folder as Folder].sort((a, b) => a.name.localeCompare(b.name)));
-          setCreating(false);
-          setNewName('');
+          onSelect(res.folder as Folder);
         }
       }
     );

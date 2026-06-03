@@ -1,4 +1,4 @@
-import type { Job, Prefs, Folder } from '../lib/types.ts';
+import type { Job, Prefs, Folder, HistoryEntry } from '../lib/types.ts';
 
 // ── Job store ─────────────────────────────────────────────────────────────────
 
@@ -12,8 +12,10 @@ export function addJob(job: Job): void {
 export function updateJob(id: string, patch: Partial<Job>): void {
   const job = jobs.get(id);
   if (!job) return;
+  const becameSuccess = patch.state === 'SUCCESS' && job.state !== 'SUCCESS';
   Object.assign(job, patch);
-  updateBadge();
+  if (becameSuccess) flashSuccessBadge();
+  else updateBadge();
   // Push live update to any open popup
   chrome.runtime.sendMessage({ type: 'STATE', jobs: getJobs() }).catch(() => {
     // Popup may not be open — ignore
@@ -57,68 +59,54 @@ function drain(): void {
   }
 }
 
-// ── Badge ─────────────────────────────────────────────────────────────────────
+// ── Badge (native Chrome API — always crisp) ──────────────────────────────────
 
-// Badge colours match the sse-viewer-inspired palette used in the popup
-const COLORS = {
-  blue:  '#c2712a',  // primary amber (approx oklch 0.62 0.14 39)
-  amber: '#c2712a',
-  green: '#3a8a4a',  // approx oklch 0.60 0.15 145
-  red:   '#c0392b',  // approx oklch 0.58 0.22 27
-} as const;
+const BADGE_BG   = '#c2712a';
+const BADGE_FG   = '#ffffff';
+const SUCCESS_BG = '#3a8a4a';
+const SUCCESS_FG = '#ffffff';
 
-let successClearTimer: ReturnType<typeof setTimeout> | null = null;
+let successTimer: ReturnType<typeof setTimeout> | null = null;
 
-function updateBadge(): void {
-  const list = [...jobs.values()];
-  const uploading = list.filter(j => j.state === 'UPLOADING');
-  const pending   = list.filter(j => j.state === 'FETCHING' || j.state === 'AUTHING');
-  const errors    = list.filter(j => j.state === 'ERROR');
-  const successes = list.filter(j => j.state === 'SUCCESS');
-  const active    = list.filter(j => j.state !== 'IDLE' && j.state !== 'SUCCESS' && j.state !== 'ERROR');
-
-  if (errors.length > 0) {
-    badge('!', 'red');
-    return;
-  }
-  if (uploading.length === 1) {
-    badge(`${uploading[0].progress}%`, 'amber');
-    return;
-  }
-  if (uploading.length > 1) {
-    badge(`${uploading.length}`, 'amber');
-    return;
-  }
-  if (pending.length > 0) {
-    badge('...', 'blue');
-    return;
-  }
-  if (successes.length > 0 && active.length === 0) {
-    badge('✓', 'green');
-    if (successClearTimer) clearTimeout(successClearTimer);
-    successClearTimer = setTimeout(() => {
-      badge('', 'green');
-      // Jobs stay in popup until user dismisses them manually
-    }, 4000);
-    return;
-  }
-  badge('', 'green');
+function showBadge(text: string, bg = BADGE_BG, fg = BADGE_FG): void {
+  chrome.action.setBadgeText({ text });
+  chrome.action.setBadgeBackgroundColor({ color: bg });
+  chrome.action.setBadgeTextColor({ color: fg });
 }
 
-function badge(text: string, color: keyof typeof COLORS): void {
-  chrome.action.setBadgeText({ text });
-  chrome.action.setBadgeBackgroundColor({ color: COLORS[color] });
+function clearBadge(): void {
+  chrome.action.setBadgeText({ text: '' });
+}
+
+/** Show a green ✓ for 3s, then revert. Resets the timer on repeated completions. */
+function flashSuccessBadge(): void {
+  if (successTimer) clearTimeout(successTimer);
+  showBadge('✓', SUCCESS_BG, SUCCESS_FG);
+  successTimer = setTimeout(() => {
+    successTimer = null;
+    updateBadge();
+  }, 3000);
+}
+
+function updateBadge(): void {
+  if (successTimer) return; // success flash owns the badge; don't clobber it
+  const uploading = [...jobs.values()].filter(j => j.state === 'UPLOADING');
+  if (uploading.length === 1) {
+    showBadge(`${uploading[0].progress}%`);
+  } else {
+    clearBadge();
+  }
 }
 
 // ── Prefs (sync storage + in-memory cache) ────────────────────────────────────
 
-const DEFAULT_PREFS: Prefs = { providerId: 'google-drive', lastFolders: {}, renameBeforeSave: false };
+const DEFAULT_PREFS: Prefs = { providerId: 'google-drive', lastFolders: {}, renameBeforeSave: false, notifications: true };
 
 let _cache: Prefs = { ...DEFAULT_PREFS, lastFolders: {} };
 
 /** Load prefs from storage into the in-memory cache. Call once on SW startup. */
 export async function initPrefs(): Promise<void> {
-  const s = await chrome.storage.sync.get(['providerId', 'lastFolders', 'lastFolder', 'renameBeforeSave']);
+  const s = await chrome.storage.sync.get(['providerId', 'lastFolders', 'lastFolder', 'renameBeforeSave', 'notifications']);
   _cache = {
     providerId: s['providerId'] ?? DEFAULT_PREFS.providerId,
     // Migrate legacy single lastFolder → lastFolders map
@@ -126,6 +114,7 @@ export async function initPrefs(): Promise<void> {
       s['lastFolder'] ? { 'google-drive': s['lastFolder'] } : {}
     ),
     renameBeforeSave: s['renameBeforeSave'] ?? false,
+    notifications: s['notifications'] ?? true,
   };
 }
 
@@ -152,4 +141,48 @@ export function getLastFolder(providerId: string): Folder | null {
 export async function setLastFolderForProvider(providerId: string, folder: Folder | null): Promise<void> {
   _cache.lastFolders = { ..._cache.lastFolders, [providerId]: folder };
   await chrome.storage.sync.set({ lastFolders: _cache.lastFolders });
+}
+
+// ── Save history (local storage, max 20) ─────────────────────────────────────
+
+const HISTORY_KEY = 'saveHistory';
+const HISTORY_MAX = 20;
+
+export async function addToHistory(entry: HistoryEntry): Promise<void> {
+  const s = await chrome.storage.local.get(HISTORY_KEY);
+  const existing: HistoryEntry[] = s[HISTORY_KEY] ?? [];
+  await chrome.storage.local.set({ [HISTORY_KEY]: [entry, ...existing].slice(0, HISTORY_MAX) });
+}
+
+export async function getHistory(): Promise<HistoryEntry[]> {
+  const s = await chrome.storage.local.get(HISTORY_KEY);
+  return s[HISTORY_KEY] ?? [];
+}
+
+export async function clearHistory(): Promise<void> {
+  await chrome.storage.local.remove(HISTORY_KEY);
+}
+
+// ── Daily save counter ────────────────────────────────────────────────────────
+
+const SAVES_TODAY_KEY = 'savesToday';
+let _savesTodayCount = 0;
+
+function todayDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export async function initSavesToday(): Promise<void> {
+  const s = await chrome.storage.local.get(SAVES_TODAY_KEY);
+  const stored: { date: string; count: number } = s[SAVES_TODAY_KEY] ?? { date: '', count: 0 };
+  _savesTodayCount = stored.date === todayDate() ? stored.count : 0;
+}
+
+export async function incrementSavesToday(): Promise<void> {
+  const today = todayDate();
+  const s = await chrome.storage.local.get(SAVES_TODAY_KEY);
+  const stored: { date: string; count: number } = s[SAVES_TODAY_KEY] ?? { date: '', count: 0 };
+  _savesTodayCount = stored.date === today ? stored.count + 1 : 1;
+  await chrome.storage.local.set({ [SAVES_TODAY_KEY]: { date: today, count: _savesTodayCount } });
+  updateBadge();
 }

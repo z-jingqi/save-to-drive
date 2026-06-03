@@ -26,6 +26,8 @@ export interface Job {
   folderId: string | null;  // null = provider root
   folderName: string;
   pageTitle?: string;       // browser tab title, used as filename fallback
+  filenameLocked?: boolean; // true after user explicitly renamed via START_JOB
+  isDuplicate?: boolean;    // true if same URL was previously saved
   fileId?: string;
   webViewLink?: string;
   folderViewLink?: string;  // containing folder URL (provider-specific)
@@ -37,6 +39,17 @@ export interface Prefs {
   providerId: string;                           // active provider id
   lastFolders: Record<string, Folder | null>;   // per-provider last folder
   renameBeforeSave: boolean;                    // show rename input before uploading
+  notifications: boolean;                       // show system notification on success
+}
+
+export interface HistoryEntry {
+  id: string;
+  url: string;
+  filename: string;
+  folderName: string;
+  folderViewLink: string;
+  webViewLink?: string;  // file-level link; absent on old entries → fall back to folderViewLink
+  savedAt: number;  // Date.now()
 }
 
 // ── Popup → SW messages ───────────────────────────────────────────────────────
@@ -50,13 +63,16 @@ export type PopupMessage =
   | { type: 'RETRY_JOB'; jobId: string }
   | { type: 'REMOVE_JOB'; jobId: string }
   | { type: 'CANCEL_JOB'; jobId: string }
-  | { type: 'START_JOB'; jobId: string; filename: string };
+  | { type: 'START_JOB'; jobId: string; filename: string }
+  | { type: 'GET_HISTORY' }
+  | { type: 'CLEAR_HISTORY' };
 
 export type PopupResponse =
   | { type: 'STATE'; jobs: Job[] }
   | { type: 'PREFS'; prefs: Prefs }
   | { type: 'FOLDERS'; folders: Folder[] }
   | { type: 'FOLDER_CREATED'; folder: Folder }
+  | { type: 'HISTORY'; entries: HistoryEntry[] }
   | { type: 'OK' }
   | { type: 'ERROR'; message: string };
 
@@ -71,6 +87,7 @@ export interface UploadMsg {
   jobId: string;
   url: string;
   filename: string;
+  filenameLocked: boolean;  // true when user explicitly renamed — skip Content-Disposition override
   mimeType: string;
   folderId: string | null;
   token: string;

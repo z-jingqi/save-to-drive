@@ -58,7 +58,7 @@ async function handleUpload(msg: UploadMsg): Promise<void> {
 async function doUpload(
   args: UploadMsg & { send: (d: Record<string, unknown>) => void; signal: AbortSignal }
 ): Promise<void> {
-  const { jobId, url, filename, mimeType, folderId, token, providerId, send, signal } = args;
+  const { jobId, url, filename, filenameLocked, mimeType, folderId, token, providerId, send, signal } = args;
 
   // ── 1. Fetch source content (streamed for download progress) ──────────────
   const response = await fetch(url, { signal });
@@ -67,12 +67,14 @@ async function doUpload(
   const detectedType = response.headers.get('content-type')?.split(';')[0].trim();
   const resolvedMime = detectedType || mimeType;
 
-  // Resolve filename: Content-Disposition > URL-inferred, then add extension from MIME if missing
+  // Resolve filename: skip Content-Disposition if user explicitly renamed the file
   let resolvedFilename = filename;
-  const disposition = response.headers.get('content-disposition') ?? '';
-  const cdMatch = disposition.match(/filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)["']?/i);
-  if (cdMatch?.[1]) {
-    resolvedFilename = decodeURIComponent(cdMatch[1].trim());
+  if (!filenameLocked) {
+    const disposition = response.headers.get('content-disposition') ?? '';
+    const cdMatch = disposition.match(/filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)["']?/i);
+    if (cdMatch?.[1]) {
+      try { resolvedFilename = decodeURIComponent(cdMatch[1].trim()); } catch { /* keep original */ }
+    }
   }
   if (!resolvedFilename.includes('.')) {
     const ext = MIME_TO_EXT[resolvedMime];
