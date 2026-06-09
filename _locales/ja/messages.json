@@ -28,6 +28,20 @@
       "folder":   { "content": "$2" }
     }
   },
+  "context_menu_save_link_to_folder": {
+    "message": "$PROVIDER$ › $FOLDER$ にリンク先を保存",
+    "placeholders": {
+      "provider": { "content": "$1" },
+      "folder":   { "content": "$2" }
+    }
+  },
+  "context_menu_save_image_to_folder": {
+    "message": "$PROVIDER$ › $FOLDER$ に画像ファイルを保存",
+    "placeholders": {
+      "provider": { "content": "$1" },
+      "folder":   { "content": "$2" }
+    }
+  },
   "context_menu_save_link":          { "message": "リンク先を保存" },
   "context_menu_save_image":         { "message": "画像ファイルを保存" },
   "context_menu_save_page_html":     { "message": "このページを HTML として保存" },
