@@ -1,11 +1,27 @@
-import type { Job, Prefs, Folder, HistoryEntry } from '../lib/types.ts';
+import type { Job, Prefs, Folder, HistoryEntry, ResumeUploadState } from '../lib/types.ts';
 
 // ── Job store ─────────────────────────────────────────────────────────────────
 
 const jobs = new Map<string, Job>();
+const JOBS_KEY = 'jobs';
+
+function persistJobs(): void {
+  chrome.storage.local.set({ [JOBS_KEY]: getJobs() }).catch(() => {
+    // Extension storage can be briefly unavailable during shutdown.
+  });
+}
+
+export async function initJobs(): Promise<void> {
+  const s = await chrome.storage.local.get(JOBS_KEY);
+  const stored: Job[] = s[JOBS_KEY] ?? [];
+  jobs.clear();
+  for (const job of stored) jobs.set(job.id, job);
+  updateBadge();
+}
 
 export function addJob(job: Job): void {
   jobs.set(job.id, job);
+  persistJobs();
   updateBadge();
 }
 
@@ -14,6 +30,7 @@ export function updateJob(id: string, patch: Partial<Job>): void {
   if (!job) return;
   const becameSuccess = patch.state === 'SUCCESS' && job.state !== 'SUCCESS';
   Object.assign(job, patch);
+  persistJobs();
   if (becameSuccess) flashSuccessBadge();
   else updateBadge();
   // Push live update to any open popup
@@ -32,6 +49,7 @@ export function getJobs(): Job[] {
 
 export function removeJob(id: string): void {
   jobs.delete(id);
+  persistJobs();
   updateBadge();
   chrome.runtime.sendMessage({ type: 'STATE', jobs: getJobs() }).catch(() => {});
 }
@@ -40,20 +58,28 @@ export function removeJob(id: string): void {
 
 type RunFn = (id: string) => Promise<void>;
 const queue: Array<[string, RunFn]> = [];
+const queuedJobIds = new Set<string>();
+const activeJobIds = new Set<string>();
 let active = 0;
 const MAX = 3;
 
-export function enqueue(jobId: string, run: RunFn): void {
+export function enqueue(jobId: string, run: RunFn): boolean {
+  if (queuedJobIds.has(jobId) || activeJobIds.has(jobId)) return false;
+  queuedJobIds.add(jobId);
   queue.push([jobId, run]);
   drain();
+  return true;
 }
 
 function drain(): void {
   while (active < MAX && queue.length > 0) {
     const [id, run] = queue.shift()!;
+    queuedJobIds.delete(id);
+    activeJobIds.add(id);
     active++;
     run(id).finally(() => {
       active--;
+      activeJobIds.delete(id);
       drain();
     });
   }
@@ -107,8 +133,9 @@ let _cache: Prefs = { ...DEFAULT_PREFS, lastFolders: {} };
 /** Load prefs from storage into the in-memory cache. Call once on SW startup. */
 export async function initPrefs(): Promise<void> {
   const s = await chrome.storage.sync.get(['providerId', 'lastFolders', 'lastFolder', 'renameBeforeSave', 'notifications']);
+  const providerId = s['providerId'] === 'google-drive' ? s['providerId'] : DEFAULT_PREFS.providerId;
   _cache = {
-    providerId: s['providerId'] ?? DEFAULT_PREFS.providerId,
+    providerId,
     // Migrate legacy single lastFolder → lastFolders map
     lastFolders: s['lastFolders'] ?? (
       s['lastFolder'] ? { 'google-drive': s['lastFolder'] } : {}
@@ -116,6 +143,9 @@ export async function initPrefs(): Promise<void> {
     renameBeforeSave: s['renameBeforeSave'] ?? false,
     notifications: s['notifications'] ?? true,
   };
+  if (s['providerId'] && s['providerId'] !== providerId) {
+    await chrome.storage.sync.set({ providerId });
+  }
 }
 
 /** Synchronous read — always returns the cached value. */
@@ -161,6 +191,51 @@ export async function getHistory(): Promise<HistoryEntry[]> {
 
 export async function clearHistory(): Promise<void> {
   await chrome.storage.local.remove(HISTORY_KEY);
+}
+
+// ── Resumable upload state ───────────────────────────────────────────────────
+
+const RESUME_STATES_KEY = 'resumeUploadStates';
+const RESUME_STATE_MAX_AGE_MS = 6 * 24 * 60 * 60 * 1000;
+
+type ResumeStateMap = Record<string, ResumeUploadState>;
+
+async function getResumeStateMap(): Promise<ResumeStateMap> {
+  const s = await chrome.storage.local.get(RESUME_STATES_KEY);
+  return s[RESUME_STATES_KEY] ?? {};
+}
+
+export async function getResumeUploadState(jobId: string): Promise<ResumeUploadState | undefined> {
+  const states = await getResumeStateMap();
+  return states[jobId];
+}
+
+export async function setResumeUploadState(state: ResumeUploadState): Promise<void> {
+  const states = await getResumeStateMap();
+  states[state.jobId] = state;
+  await chrome.storage.local.set({ [RESUME_STATES_KEY]: states });
+}
+
+export async function clearResumeUploadState(jobId: string): Promise<void> {
+  const states = await getResumeStateMap();
+  if (!states[jobId]) return;
+  delete states[jobId];
+  await chrome.storage.local.set({ [RESUME_STATES_KEY]: states });
+}
+
+export async function pruneExpiredResumeUploadStates(now = Date.now()): Promise<string[]> {
+  const states = await getResumeStateMap();
+  const expired: string[] = [];
+  for (const [jobId, state] of Object.entries(states)) {
+    if (now - state.updatedAt > RESUME_STATE_MAX_AGE_MS) {
+      expired.push(jobId);
+      delete states[jobId];
+    }
+  }
+  if (expired.length > 0) {
+    await chrome.storage.local.set({ [RESUME_STATES_KEY]: states });
+  }
+  return expired;
 }
 
 // ── Daily save counter ────────────────────────────────────────────────────────

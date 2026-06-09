@@ -1,8 +1,8 @@
 {
-  "ext_name":        { "message": "クラウドに保存" },
-  "ext_description": { "message": "右クリックメニューから直接、リンクや画像をクラウドに保存できます。" },
+  "ext_name":        { "message": "Google Drive に保存" },
+  "ext_description": { "message": "右クリックメニューから直接、リンクや画像を Google Drive に保存できます。" },
 
-  "context_menu_title":   { "message": "クラウドに保存" },
+  "context_menu_title":   { "message": "Google Drive に保存" },
   "context_menu_save_to": {
     "message": "$PROVIDER$ に保存",
     "placeholders": { "provider": { "content": "$1" } }
@@ -14,19 +14,44 @@
       "folder":   { "content": "$2" }
     }
   },
-  "popup_header_title":   { "message": "クラウドに保存" },
+  "context_menu_save_file_to_folder": {
+    "message": "$PROVIDER$ › $FOLDER$ にファイルを保存",
+    "placeholders": {
+      "provider": { "content": "$1" },
+      "folder":   { "content": "$2" }
+    }
+  },
+  "context_menu_save_page_to_folder": {
+    "message": "$PROVIDER$ › $FOLDER$ にページを保存",
+    "placeholders": {
+      "provider": { "content": "$1" },
+      "folder":   { "content": "$2" }
+    }
+  },
+  "context_menu_save_link":          { "message": "リンク先を保存" },
+  "context_menu_save_image":         { "message": "画像ファイルを保存" },
+  "context_menu_save_page_html":     { "message": "このページを HTML として保存" },
+  "context_menu_save_page_markdown": { "message": "このページを Markdown として保存" },
+  "popup_header_title":   { "message": "Google Drive に保存" },
   "settings_title":            { "message": "設定" },
   "settings_history_count":    { "message": "件の保存済み" },
   "settings_notifications_desc": { "message": "ファイル保存時にシステム通知を表示する" },
   "settings_rename_desc":      { "message": "アップロード前にファイル名を編集できます" },
+  "settings_about_title":      { "message": "保存について" },
+  "settings_privacy_title":    { "message": "ローカル転送" },
+  "settings_privacy_desc":     { "message": "ファイルはこの Chrome 拡張機能が取得し、Google Drive にアップロードします。バックエンドサーバーは使いません。" },
+  "settings_large_files_title":{ "message": "大きなファイル" },
+  "settings_large_files_desc": { "message": "Google Drive の再開可能アップロードを使用するため、一時停止、再開、ブラウザ再起動後の復元ができます。" },
+  "settings_source_limits_title":{ "message": "元リンクの制限" },
+  "settings_source_limits_desc": { "message": "保護されたリンク、期限切れになるリンク、ページ内の blob リンクは、拡張機能が内容を再取得できないため直接保存できない場合があります。" },
   "popup_notifications_label": { "message": "通知" },
   "popup_rename_label":   { "message": "保存前にリネーム" },
-  "popup_more_providers": { "message": "他サービスも近日対応予定" },
+  "popup_more_providers": { "message": "Google Drive" },
   "popup_connected":      { "message": "接続済み" },
   "popup_not_connected":  { "message": "未接続" },
   "popup_change":         { "message": "変更" },
   "popup_cancel":         { "message": "キャンセル" },
-  "popup_empty_state":    { "message": "リンクや画像を右クリックして「クラウドに保存」を選択してください。" },
+  "popup_empty_state":    { "message": "リンクや画像を右クリックして「Google Drive に保存」を選択してください。" },
 
   "job_signing_in":   { "message": "サインイン中…" },
   "job_fetching":     { "message": "取得中…" },
@@ -38,6 +63,7 @@
     "message": "アップロード中… $PCT$%",
     "placeholders": { "pct": { "content": "$1" } }
   },
+  "job_paused":       { "message": "一時停止中" },
   "job_saved": {
     "message": "$FOLDER$ に保存しました",
     "placeholders": { "folder": { "content": "$1" } }
@@ -45,9 +71,22 @@
   "job_open_file":     { "message": "ファイルを開く" },
   "job_open_folder":   { "message": "フォルダを開く" },
   "job_upload_failed": { "message": "アップロード失敗" },
+  "job_error_source_unavailable": { "message": "元ファイルにアクセスできません" },
+  "job_error_source_changed":     { "message": "元ファイルが変更されました。破損を防ぐため最初からやり直してください。" },
+  "job_error_auth_required":      { "message": "Google Drive の再認証が必要です" },
+  "job_error_drive_quota":        { "message": "Google Drive の空き容量が不足しています" },
+  "job_error_drive_forbidden":    { "message": "この Drive フォルダに保存できません" },
+  "job_error_session_expired":    { "message": "アップロードセッションが期限切れです。再試行してください。" },
+  "job_error_network":            { "message": "ネットワークが中断されました。接続後に再試行してください。" },
+  "job_error_storage":            { "message": "再開用の状態をローカルに保存できません" },
+  "job_error_unsupported_source": { "message": "この種類のリンクは直接保存できません" },
   "job_retry":         { "message": "再試行" },
   "job_remove":        { "message": "削除" },
+  "job_remove_record": { "message": "記録を削除" },
   "job_cancel":        { "message": "キャンセル" },
+  "job_cancel_upload": { "message": "アップロードをキャンセル" },
+  "job_pause":         { "message": "一時停止" },
+  "job_resume":        { "message": "再開" },
   "job_save_start":    { "message": "保存" },
   "job_duplicate_warning": { "message": "⚠ 保存済み" },
   "job_save_anyway":       { "message": "保存する" },
@@ -75,8 +114,8 @@
     "placeholders": { "name": { "content": "$1" } }
   },
 
-  "options_title":       { "message": "クラウドに保存 — サービス" },
-  "options_hint":        { "message": "テスト用にサービスを有効にしてください。有効なサービスのみポップアップに表示されます。Google Drive 以外は初期状態で無効です。" },
+  "options_title":       { "message": "Google Drive に保存 — 設定" },
+  "options_hint":        { "message": "Google Drive への保存動作を設定します。" },
   "options_always_on":   { "message": "常に有効" },
   "options_signed_in":   { "message": "✓ サインイン済み" },
   "options_signed_in_as":{ "message": "✓ $EMAIL$ でサインイン済み", "placeholders": { "email": { "content": "$1" } } },

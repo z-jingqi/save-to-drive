@@ -62,6 +62,7 @@ body {
   align-items: center;
   gap: 16px;
 }
+.setting-row-stack { align-items: flex-start; }
 
 .setting-info {
   flex: 1;

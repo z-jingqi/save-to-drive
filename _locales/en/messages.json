@@ -1,6 +1,6 @@
 {
   "ext_name":        { "message": "Save to Drive" },
-  "ext_description": { "message": "Save any link or image directly to cloud storage — right from the right-click menu." },
+  "ext_description": { "message": "Save any link or image directly to Google Drive from the right-click menu." },
 
   "context_menu_title":   { "message": "Save to Drive" },
   "context_menu_save_to": {
@@ -14,14 +14,39 @@
       "folder":   { "content": "$2", "example": "My Drive" }
     }
   },
+  "context_menu_save_file_to_folder": {
+    "message": "Save file to $PROVIDER$ › $FOLDER$",
+    "placeholders": {
+      "provider": { "content": "$1", "example": "Google Drive" },
+      "folder":   { "content": "$2", "example": "My Drive" }
+    }
+  },
+  "context_menu_save_page_to_folder": {
+    "message": "Save page to $PROVIDER$ › $FOLDER$",
+    "placeholders": {
+      "provider": { "content": "$1", "example": "Google Drive" },
+      "folder":   { "content": "$2", "example": "My Drive" }
+    }
+  },
+  "context_menu_save_link":          { "message": "Save link target" },
+  "context_menu_save_image":         { "message": "Save image file" },
+  "context_menu_save_page_html":     { "message": "Save this page as HTML" },
+  "context_menu_save_page_markdown": { "message": "Save this page as Markdown" },
   "popup_header_title":   { "message": "Save to Drive" },
   "settings_title":            { "message": "Settings" },
   "settings_history_count":    { "message": "saved items" },
   "settings_notifications_desc": { "message": "Show a system notification when a file is saved" },
   "settings_rename_desc":      { "message": "Edit the filename before each upload starts" },
+  "settings_about_title":      { "message": "About saving" },
+  "settings_privacy_title":    { "message": "Local transfer" },
+  "settings_privacy_desc":     { "message": "Files are fetched by this Chrome extension and uploaded to your Google Drive. No backend server is used." },
+  "settings_large_files_title":{ "message": "Large files" },
+  "settings_large_files_desc": { "message": "Uploads use Google Drive resumable sessions, so they can be paused, resumed, and recovered after browser restarts." },
+  "settings_source_limits_title":{ "message": "Source limits" },
+  "settings_source_limits_desc": { "message": "Some protected, expiring, or in-page blob links cannot be saved directly because the extension cannot re-fetch their bytes." },
   "popup_notifications_label": { "message": "Notifications" },
   "popup_rename_label":   { "message": "Rename before saving" },
-  "popup_more_providers": { "message": "More providers coming" },
+  "popup_more_providers": { "message": "Google Drive" },
   "popup_connected":      { "message": "Connected" },
   "popup_not_connected":  { "message": "Not connected yet" },
   "popup_change":         { "message": "Change" },
@@ -38,6 +63,7 @@
     "message": "Uploading… $PCT$%",
     "placeholders": { "pct": { "content": "$1", "example": "73" } }
   },
+  "job_paused":       { "message": "Paused" },
   "job_saved": {
     "message": "Saved · $FOLDER$",
     "placeholders": { "folder": { "content": "$1", "example": "My Drive" } }
@@ -45,9 +71,22 @@
   "job_open_file":     { "message": "Open file" },
   "job_open_folder":   { "message": "Open folder" },
   "job_upload_failed": { "message": "Upload failed" },
+  "job_error_source_unavailable": { "message": "Source file is no longer available" },
+  "job_error_source_changed":     { "message": "Source file changed. Start again to avoid a corrupted save." },
+  "job_error_auth_required":      { "message": "Google Drive needs authorization again" },
+  "job_error_drive_quota":        { "message": "Google Drive storage is full" },
+  "job_error_drive_forbidden":    { "message": "Cannot save to this Drive folder" },
+  "job_error_session_expired":    { "message": "Upload session expired. Retry to start again." },
+  "job_error_network":            { "message": "Network interrupted. Retry when connected." },
+  "job_error_storage":            { "message": "Could not save resume state locally" },
+  "job_error_unsupported_source": { "message": "This link type cannot be saved directly" },
   "job_retry":         { "message": "Retry" },
   "job_remove":        { "message": "Remove" },
+  "job_remove_record": { "message": "Remove record" },
   "job_cancel":        { "message": "Cancel" },
+  "job_cancel_upload": { "message": "Cancel upload" },
+  "job_pause":         { "message": "Pause" },
+  "job_resume":        { "message": "Resume" },
   "job_save_start":    { "message": "Save" },
   "job_duplicate_warning": { "message": "⚠ Already saved" },
   "job_save_anyway":       { "message": "Save anyway" },
@@ -75,8 +114,8 @@
     "placeholders": { "name": { "content": "$1", "example": "My Drive" } }
   },
 
-  "options_title":       { "message": "Save to Drive — Providers" },
-  "options_hint":        { "message": "Enable providers here for testing. Only enabled providers appear in the popup. All providers are off by default except Google Drive." },
+  "options_title":       { "message": "Save to Drive — Settings" },
+  "options_hint":        { "message": "Configure Google Drive saving behavior." },
   "options_always_on":   { "message": "always on" },
   "options_signed_in":   { "message": "✓ Signed in" },
   "options_signed_in_as":{ "message": "✓ Signed in as $EMAIL$", "placeholders": { "email": { "content": "$1", "example": "user@example.com" } } },

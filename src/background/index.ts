@@ -1,95 +1,234 @@
-import type { Job, PopupMessage, OffscreenResponse } from '../lib/types.ts';
+import type { Job, PopupMessage, OffscreenResponse, SaveKind } from '../lib/types.ts';
 import { t } from '../lib/i18n.ts';
+import { finalizeFilenameForJob, pageFilenameFromTitle } from '../lib/filename.ts';
+import { isSupportedSourceUrl } from '../lib/source-url.ts';
+import { pruneExpiredTempContent } from '../lib/temp-content-store.ts';
 import { getProvider } from '../providers/registry.ts';
+import {
+  isContextMenuAction,
+  MENU_SAVE_IMAGE_ID,
+  MENU_SAVE_LINK_ID,
+  MENU_SAVE_PAGE_HTML_ID,
+  MENU_SAVE_PAGE_MARKDOWN_ID,
+  syncContextMenuTitle,
+} from './context-menu.ts';
+import { capturePage, type PageCaptureFormat } from './page-capture.ts';
 import {
   addJob, enqueue, getJobs, getPrefs, getPrefsSync, initPrefs,
   setPrefs, setLastFolderForProvider, getLastFolder, updateJob, removeJob,
-  getHistory, clearHistory, initSavesToday,
+  getHistory, clearHistory, initSavesToday, initJobs, pruneExpiredResumeUploadStates,
 } from './state-manager.ts';
-import { runJob, onOffscreenMessage } from './upload.ts';
+import { runJob, onOffscreenMessage, discardResumeUpload, setInlineUploadContent } from './upload.ts';
 
 // Warm the prefs cache, sync context menu, load daily save count
-initPrefs().then(() => { syncContextMenuTitle(); return initSavesToday(); }).catch(console.error);
-
-// ── Context menu registration ─────────────────────────────────────────────────
-
-
-/** Rebuild the context menu item to match the active provider + folder. */
-function syncContextMenuTitle(): void {
-  try {
-    const prefs      = getPrefsSync();
-    const provider   = getProvider(prefs.providerId);
-    const folder     = getLastFolder(prefs.providerId);
-    const rawFolder  = folder?.name ?? provider.rootFolderName;
-    const folderName = rawFolder.length > 28 ? rawFolder.slice(0, 26) + '…' : rawFolder;
-    const title      = t('context_menu_save_to_folder', provider.name, folderName);
-    // removeAll always succeeds (no-op if empty), eliminating the update/create race on reload
-    chrome.contextMenus.removeAll(() => {
-      chrome.contextMenus.create({ id: 'save-to-drive', title, contexts: ['link', 'image'] });
-    });
-  } catch (err) { console.error('syncContextMenuTitle', err); }
-}
+initPrefs()
+  .then(async () => {
+    await initJobs();
+    await pruneExpiredResumeUploadStates();
+    pruneExpiredTempContent().catch(console.error);
+    syncContextMenuTitle();
+    await initSavesToday();
+    resumeInterruptedJobs();
+  })
+  .catch(console.error);
 
 // ── Context menu click ────────────────────────────────────────────────────────
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-  const url = info.linkUrl ?? info.srcUrl;
-  if (!url) return;
+  if (!isContextMenuAction(info.menuItemId)) return;
+  handleContextMenuAction(info.menuItemId, info, tab).catch(console.error);
+});
 
+async function handleContextMenuAction(
+  action: typeof MENU_SAVE_LINK_ID | typeof MENU_SAVE_IMAGE_ID | typeof MENU_SAVE_PAGE_HTML_ID | typeof MENU_SAVE_PAGE_MARKDOWN_ID,
+  info: chrome.contextMenus.OnClickData,
+  tab?: chrome.tabs.Tab
+): Promise<void> {
+  if (action === MENU_SAVE_LINK_ID) {
+    if (!info.linkUrl) return;
+    const filename = inferFilename(info.linkUrl, tab?.title);
+    const job = createJob({
+      url: info.linkUrl,
+      filename,
+      mimeType: inferMimeType(filename),
+      saveKind: 'link',
+      pageTitle: tab?.title,
+    });
+    startJobFlow(job);
+    return;
+  }
+
+  if (action === MENU_SAVE_IMAGE_ID) {
+    if (!info.srcUrl) return;
+    const filename = inferFilename(info.srcUrl, tab?.title, 'image');
+    const job = createJob({
+      url: info.srcUrl,
+      filename,
+      mimeType: inferMimeType(filename, 'image'),
+      saveKind: 'image',
+      pageTitle: tab?.title,
+    });
+    startJobFlow(job);
+    return;
+  }
+
+  const format: PageCaptureFormat = action === MENU_SAVE_PAGE_HTML_ID ? 'html' : 'markdown';
+  await startPageSave(format, tab);
+}
+
+async function startPageSave(format: PageCaptureFormat, tab?: chrome.tabs.Tab): Promise<void> {
+  const pageUrl = tab?.url;
+  const title = tab?.title || 'page';
+  const mimeType = format === 'html' ? 'text/html' : 'text/markdown';
+  const extension = format === 'html' ? 'html' : 'md';
+  const saveKind: SaveKind = format === 'html' ? 'page-html' : 'page-markdown';
+  const job = createJob({
+    url: pageUrl ?? `page:${Date.now()}`,
+    filename: pageFilenameFromTitle(title, extension),
+    mimeType,
+    saveKind,
+    pageTitle: title,
+  });
+  addJob(job);
+  chrome.action.openPopup().catch(() => {});
+
+  if (!tab?.id || !pageUrl || !isCapturablePageUrl(pageUrl)) {
+    updateJob(job.id, {
+      state: 'ERROR',
+      error: `Cannot capture this page: ${pageUrl ?? 'unknown page'}`,
+      errorCode: 'SOURCE_UNAVAILABLE',
+    });
+    return;
+  }
+
+  updateJob(job.id, { state: 'FETCHING', progress: 0, indeterminate: true });
+  try {
+    const capture = await capturePage(tab.id, format);
+    const filename = pageFilenameFromTitle(capture.title, extension);
+    updateJob(job.id, {
+      url: capture.url,
+      filename,
+      mimeType,
+      contentSource: 'inline',
+      state: 'IDLE',
+      progress: 0,
+      indeterminate: undefined,
+    });
+    await setInlineUploadContent(job.id, capture.content);
+    await prepareJobForUpload(job.id);
+  } catch (err) {
+    updateJob(job.id, {
+      state: 'ERROR',
+      error: String(err),
+      errorCode: 'SOURCE_UNAVAILABLE',
+      indeterminate: undefined,
+    });
+  }
+}
+
+function startJobFlow(job: Job): void {
+  addJob(job);
+  chrome.action.openPopup().catch(() => {});
+
+  const sourceUrl = job.sourceUrl ?? job.url;
+  if (job.contentSource !== 'inline' && !isSupportedSourceUrl(sourceUrl)) {
+    updateJob(job.id, {
+      state: 'ERROR',
+      error: `Unsupported source URL: ${sourceUrl.slice(0, 32)}`,
+      errorCode: 'UNSUPPORTED_SOURCE',
+    });
+    return;
+  }
+
+  void prepareJobForUpload(job.id);
+}
+
+async function prepareJobForUpload(jobId: string): Promise<void> {
+  const job = getJobs().find(j => j.id === jobId);
+  if (!job) return;
+
+  const sourceUrl = job.sourceUrl ?? job.url;
+  if (job.contentSource !== 'inline' && !isSupportedSourceUrl(sourceUrl)) {
+    updateJob(job.id, {
+      state: 'ERROR',
+      error: `Unsupported source URL: ${sourceUrl.slice(0, 32)}`,
+      errorCode: 'UNSUPPORTED_SOURCE',
+    });
+    return;
+  }
+
+  const prefs = await getPrefs();
+  let providerId = prefs.providerId;
+  try {
+    await getProvider(providerId).getToken(false);
+  } catch {
+    providerId = 'google-drive';
+  }
+  const folder = getLastFolder(providerId);
+  updateJob(job.id, {
+    providerId,
+    folderId: folder?.id ?? null,
+    folderName: folder?.name ?? getProvider(providerId).name,
+  });
+
+  const hist = await getHistory();
+  const dup = hist.find(e =>
+    e.url === job.url &&
+    (e.saveKind ?? 'link') === (job.saveKind ?? 'link')
+  );
+  if (dup) {
+    updateJob(job.id, {
+      isDuplicate: true,
+      webViewLink: dup.webViewLink || undefined,
+      folderViewLink: dup.folderViewLink || undefined,
+    });
+  }
+  if (!dup && !prefs.renameBeforeSave) enqueue(job.id, runJob);
+}
+
+function createJob(args: {
+  url: string;
+  sourceUrl?: string;
+  contentSource?: 'url' | 'inline';
+  filename: string;
+  mimeType: string;
+  saveKind: SaveKind;
+  pageTitle?: string;
+}): Job {
   const cached = getPrefsSync();
-  const pageTitle = tab?.title;
-  const filename = inferFilename(url, pageTitle);
   const lastFolder = getLastFolder(cached.providerId);
   const providerName = (() => { try { return getProvider(cached.providerId).name; } catch { return ''; } })();
-
-  const job: Job = {
+  return {
     id: crypto.randomUUID(),
-    url,
-    filename,
-    mimeType: inferMimeType(filename, info.mediaType),
+    url: args.url,
+    sourceUrl: args.sourceUrl,
+    contentSource: args.contentSource,
+    filename: args.filename,
+    mimeType: args.mimeType,
+    saveKind: args.saveKind,
     state: 'IDLE',
     progress: 0,
     providerId: cached.providerId,
     folderId: lastFolder?.id ?? null,
     folderName: lastFolder?.name ?? providerName,
-    pageTitle,
+    pageTitle: args.pageTitle,
     retries: 0,
   };
-  addJob(job);
+}
 
-  // Open popup immediately while the user-gesture is still valid
-  chrome.action.openPopup().catch(() => {});
-
-  // Load authoritative prefs, validate the provider is actually signed in,
-  // then enqueue. Falls back to google-drive if stored provider has no token.
-  getPrefs().then(async prefs => {
-    let providerId = prefs.providerId;
-    try {
-      await getProvider(providerId).getToken(false);
-    } catch {
-      providerId = 'google-drive';
-    }
-    const folder = getLastFolder(providerId);
+function resumeInterruptedJobs(): void {
+  for (const job of getJobs()) {
+    if (job.state !== 'AUTHING' && job.state !== 'FETCHING' && job.state !== 'UPLOADING') continue;
     updateJob(job.id, {
-      providerId,
-      folderId: folder?.id ?? null,
-      folderName: folder?.name ?? getProvider(providerId).name,
+      state: 'IDLE',
+      progress: 0,
+      phase: undefined,
+      indeterminate: undefined,
+      error: undefined,
     });
-    // Duplicate detection — flag if same URL was previously saved, and copy
-    // the prior file/folder links so the confirm row can offer a "view" button.
-    const hist = await getHistory();
-    const dup = hist.find(e => e.url === url);
-    if (dup) {
-      updateJob(job.id, {
-        isDuplicate: true,
-        webViewLink:   dup.webViewLink   || undefined,
-        folderViewLink: dup.folderViewLink || undefined,
-      });
-    }
-    // Leave IDLE if: rename mode on, OR duplicate (needs user confirmation)
-    if (!dup && !prefs.renameBeforeSave) enqueue(job.id, runJob);
-  });
-});
+    enqueue(job.id, runJob);
+  }
+}
 
 // ── Long-lived ports from offscreen (keeps SW alive + enables CANCEL) ─────────
 
@@ -183,7 +322,11 @@ async function handlePopupMessage(msg: PopupMessage, send: (r: unknown) => void)
       }
 
       case 'START_JOB':
-        updateJob(msg.jobId, { filename: msg.filename, filenameLocked: true });
+        {
+          const job = getJobs().find(j => j.id === msg.jobId);
+          const filename = job ? finalizeFilenameForJob(msg.filename, job) : msg.filename;
+          updateJob(msg.jobId, { filename, filenameLocked: true, error: undefined, errorCode: undefined });
+        }
         enqueue(msg.jobId, runJob);
         send({ type: 'OK' });
         break;
@@ -198,19 +341,40 @@ async function handlePopupMessage(msg: PopupMessage, send: (r: unknown) => void)
         break;
 
       case 'RETRY_JOB':
-        updateJob(msg.jobId, { state: 'IDLE', error: undefined, retries: 0 });
+        updateJob(msg.jobId, { state: 'IDLE', error: undefined, errorCode: undefined, retries: 0 });
         enqueue(msg.jobId, runJob);
         send({ type: 'OK' });
         break;
 
-      case 'REMOVE_JOB':
+      case 'RESUME_JOB':
+        updateJob(msg.jobId, { state: 'IDLE', error: undefined, errorCode: undefined });
+        enqueue(msg.jobId, runJob);
+        send({ type: 'OK' });
+        break;
+
+      case 'PAUSE_JOB': {
+        const port = uploadPorts.get(msg.jobId);
+        if (port) {
+          port.postMessage({ type: 'PAUSE' });
+        } else {
+          updateJob(msg.jobId, { state: 'PAUSED', phase: undefined, indeterminate: undefined });
+        }
+        send({ type: 'OK' });
+        break;
+      }
+
+      case 'REMOVE_JOB': {
+        const job = getJobs().find(j => j.id === msg.jobId);
+        if (job?.state !== 'SUCCESS') await discardResumeUpload(msg.jobId, true);
         removeJob(msg.jobId);
         send({ type: 'OK' });
         break;
+      }
 
       case 'CANCEL_JOB': {
         const port = uploadPorts.get(msg.jobId);
         if (port) port.postMessage({ type: 'CANCEL' });
+        await discardResumeUpload(msg.jobId, true);
         removeJob(msg.jobId);
         send({ type: 'OK' });
         break;
@@ -255,19 +419,29 @@ chrome.notifications.onClicked.addListener((notifId) => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function inferFilename(url: string, pageTitle?: string): string {
+function inferFilename(url: string, pageTitle?: string, mediaType?: string): string {
   try {
     const u = new URL(url);
     const last = u.pathname.split('/').filter(Boolean).pop();
     if (last?.includes('.')) return decodeURIComponent(last);
   } catch { /* invalid URL */ }
+  const inferredExt = mediaType === 'image' ? 'jpg' : undefined;
   const ts = Date.now();
   if (pageTitle) {
     const safe = pageTitle.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-');
     const prefix = `saved-${ts}-`;
-    return prefix + safe.slice(0, 80 - prefix.length);
+    return `${prefix}${safe.slice(0, 80 - prefix.length)}${inferredExt ? `.${inferredExt}` : ''}`;
   }
-  return `saved-${ts}`;
+  return `saved-${ts}${inferredExt ? `.${inferredExt}` : ''}`;
+}
+
+function isCapturablePageUrl(url: string): boolean {
+  try {
+    const protocol = new URL(url).protocol;
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 const MIME_MAP: Record<string, string> = {
@@ -278,7 +452,7 @@ const MIME_MAP: Record<string, string> = {
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   xls: 'application/vnd.ms-excel',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  txt: 'text/plain', html: 'text/html', csv: 'text/csv',
+  txt: 'text/plain', html: 'text/html', md: 'text/markdown', markdown: 'text/markdown', csv: 'text/csv',
 };
 
 function inferMimeType(filename: string, mediaType?: string): string {

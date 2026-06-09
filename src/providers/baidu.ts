@@ -15,6 +15,12 @@
 const CLIENT_ID = '';
 const APP_FOLDER = '/apps/save-to-drive'; // must match your Baidu app name
 
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
+
 const AUTH_URL  = 'https://openapi.baidu.com/oauth/2.0/authorize';
 const TOKEN_URL = 'https://openapi.baidu.com/oauth/2.0/token';
 const SCOPES    = ['basic', 'netdisk'];
@@ -85,7 +91,7 @@ export const baiduProvider: Provider = {
       ondup: 'newcopy',
     });
 
-    const blob = new Blob([bytes], { type: mimeType });
+    const blob = new Blob([toArrayBuffer(bytes)], { type: mimeType });
     const formData = new FormData();
     formData.append('file', blob, filename);
 

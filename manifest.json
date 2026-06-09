@@ -14,7 +14,8 @@
     "identity",
     "storage",
     "notifications",
-    "offscreen"
+    "offscreen",
+    "scripting"
   ],
   "host_permissions": [
     "<all_urls>",

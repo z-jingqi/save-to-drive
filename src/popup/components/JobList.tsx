@@ -1,65 +1,9 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { X, RotateCcw, ExternalLink, Eye } from 'lucide-react';
+import { X, RotateCcw, ExternalLink, Eye, Pause, Play } from 'lucide-react';
+import { editableFilename } from '../../lib/filename.ts';
 import { t } from '../../lib/i18n.ts';
 import type { Job } from '../../lib/types.ts';
-
-// ── File type icons ───────────────────────────────────────────────────────────
-
-interface IconDef { letter: string; bg: string }
-
-function fileIcon(mimeType: string): IconDef {
-  if (mimeType === 'application/pdf')                                                          return { letter: 'P', bg: '#ea4335' };
-  if (mimeType === 'application/msword' ||
-      mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return { letter: 'W', bg: '#4285f4' };
-  if (mimeType === 'application/vnd.ms-excel' ||
-      mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')       return { letter: 'X', bg: '#34a853' };
-  if (mimeType === 'text/plain')   return { letter: 'T', bg: '#757575' };
-  if (mimeType === 'text/csv')     return { letter: 'C', bg: '#34a853' };
-  if (mimeType === 'text/html')    return { letter: 'H', bg: '#fa7b17' };
-  if (mimeType === 'application/zip' || mimeType === 'application/x-zip-compressed')
-                                   return { letter: 'Z', bg: '#8430ce' };
-  if (mimeType.startsWith('audio/')) return { letter: 'A', bg: '#8430ce' };
-  if (mimeType.startsWith('video/')) return { letter: 'V', bg: '#ea4335' };
-  return { letter: '·', bg: '#9aa0a6' };
-}
-
-// ── Base thumbnail ────────────────────────────────────────────────────────────
-
-function ImageThumb({ url }: { url: string }) {
-  const [src, setSrc] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let objectUrl: string | null = null;
-    fetch(url)
-      .then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.blob(); })
-      .then(blob => { objectUrl = URL.createObjectURL(blob); setSrc(objectUrl); })
-      .catch(() => setFailed(true));
-    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [url]);
-
-  if (failed) return (
-    <div class="thumb thumb-letter-icon" style={{ background: '#9aa0a6' }}>
-      <span class="thumb-letter">·</span>
-    </div>
-  );
-  if (!src) return <div class="thumb thumb-loading" />;
-  return (
-    <div class="thumb">
-      <img class="thumb-img" src={src} alt="" onError={() => setFailed(true)} />
-    </div>
-  );
-}
-
-function BaseThumbnail({ job }: { job: Job }) {
-  if (job.mimeType.startsWith('image/')) return <ImageThumb url={job.url} />;
-  const { letter, bg } = fileIcon(job.mimeType);
-  return (
-    <div class="thumb thumb-letter-icon" style={{ background: bg }}>
-      <span class="thumb-letter">{letter}</span>
-    </div>
-  );
-}
+import { FileThumb } from './FileThumb.tsx';
 
 // ── Thumbnail cell with state overlays ────────────────────────────────────────
 
@@ -69,7 +13,7 @@ function ThumbCell({ job }: { job: Job }) {
   return (
     <div class="thumb-wrap">
       <div class="thumb-clip">
-        <BaseThumbnail job={job} />
+        <FileThumb job={job} />
 
         {state === 'AUTHING' && (
           <>
@@ -97,7 +41,24 @@ function statusLabel(job: Job): string {
   if (job.state === 'AUTHING')   return t('job_signing_in');
   if (job.state === 'FETCHING')  return job.indeterminate ? t('job_fetching') : t('job_fetching_pct', String(job.progress));
   if (job.state === 'UPLOADING') return t('job_uploading_pct', String(job.progress));
+  if (job.state === 'PAUSED')    return t('job_paused');
   return '';
+}
+
+function errorLabel(job: Job): string {
+  switch (job.errorCode) {
+    case 'SOURCE_UNAVAILABLE':     return t('job_error_source_unavailable');
+    case 'SOURCE_CHANGED':         return t('job_error_source_changed');
+    case 'AUTH_REQUIRED':          return t('job_error_auth_required');
+    case 'DRIVE_QUOTA':            return t('job_error_drive_quota');
+    case 'DRIVE_FORBIDDEN':        return t('job_error_drive_forbidden');
+    case 'DRIVE_SESSION_EXPIRED':  return t('job_error_session_expired');
+    case 'NETWORK':                return t('job_error_network');
+    case 'STORAGE':                return t('job_error_storage');
+    case 'UNSUPPORTED_SOURCE':     return t('job_error_unsupported_source');
+    case 'UNKNOWN':                return t('job_upload_failed');
+    default:                       return job.error ?? t('job_upload_failed');
+  }
 }
 
 function folderUrl(job: Job): string {
@@ -115,6 +76,8 @@ function fileUrl(job: Job): string {
 const openInDrive  = (url: string)   => chrome.tabs.create({ url });
 const removeJob    = (jobId: string)  => chrome.runtime.sendMessage({ type: 'REMOVE_JOB', jobId });
 const cancelJob    = (jobId: string)  => chrome.runtime.sendMessage({ type: 'CANCEL_JOB', jobId });
+const pauseJob     = (jobId: string)  => chrome.runtime.sendMessage({ type: 'PAUSE_JOB', jobId });
+const resumeJob    = (jobId: string)  => chrome.runtime.sendMessage({ type: 'RESUME_JOB', jobId });
 const retryJob     = (jobId: string)  => chrome.runtime.sendMessage({ type: 'RETRY_JOB', jobId });
 const startJob     = (jobId: string, filename: string) =>
   chrome.runtime.sendMessage({ type: 'START_JOB', jobId, filename });
@@ -151,13 +114,13 @@ function DuplicateConfirmRow({ job, onConfirm }: { job: Job; onConfirm: () => vo
 // ── Rename row (IDLE state, rename mode on) ───────────────────────────────────
 
 function RenameRow({ job }: { job: Job }) {
-  const [name, setName] = useState(job.filename);
+  const [name, setName] = useState(editableFilename(job));
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { inputRef.current?.focus(); inputRef.current?.select(); }, []);
 
   const confirm = () => {
-    const trimmed = name.trim() || job.filename;
+    const trimmed = name.trim() || editableFilename(job);
     startJob(job.id, trimmed);
   };
 
@@ -173,7 +136,7 @@ function RenameRow({ job }: { job: Job }) {
           if (e.key === 'Enter') confirm();
           if (e.key === 'Escape') removeJob(job.id);
         }}
-        placeholder={job.filename}
+        placeholder={editableFilename(job)}
       />
       <button class="rename-save-btn" onClick={confirm}>
         {t('job_save_start')}
@@ -219,6 +182,7 @@ export function JobList({ jobs, renameBeforeSave }: Props) {
 
         const isSuccess = job.state === 'SUCCESS';
         const isError   = job.state === 'ERROR';
+        const isPaused  = job.state === 'PAUSED';
         const isActive  = job.state === 'AUTHING' || job.state === 'FETCHING' || job.state === 'UPLOADING';
 
         return (
@@ -240,7 +204,7 @@ export function JobList({ jobs, renameBeforeSave }: Props) {
                 </span>
               </div>
 
-              {isActive && (
+              {(isActive || isPaused) && (
                 <span class={`status-text${job.state === 'UPLOADING' ? ' status-upload' : ''}`}>
                   {statusLabel(job)}
                 </span>
@@ -261,7 +225,7 @@ export function JobList({ jobs, renameBeforeSave }: Props) {
               {isError && (
                 <div class="error-row">
                   <span class="error-text" title={job.error}>
-                    {job.error ?? t('job_upload_failed')}
+                    {errorLabel(job)}
                   </span>
                   <button class="retry-btn" onClick={(e) => { e.stopPropagation(); retryJob(job.id); }}>
                     <RotateCcw size={11} strokeWidth={2.5} /> {t('job_retry')}
@@ -271,12 +235,22 @@ export function JobList({ jobs, renameBeforeSave }: Props) {
             </div>
 
             {(isSuccess || isError) && (
-              <button class="job-remove" title={t('job_remove')} onClick={(e) => { e.stopPropagation(); removeJob(job.id); }}>
+              <button class="job-remove" title={isSuccess ? t('job_remove_record') : t('job_remove')} onClick={(e) => { e.stopPropagation(); removeJob(job.id); }}>
                 <X size={13} strokeWidth={2.5} />
               </button>
             )}
             {isActive && (
-              <button class="job-remove job-cancel" title={t('job_cancel')} onClick={(e) => { e.stopPropagation(); cancelJob(job.id); }}>
+              <button class="job-remove job-pause" title={t('job_pause')} onClick={(e) => { e.stopPropagation(); pauseJob(job.id); }}>
+                <Pause size={13} strokeWidth={2.5} />
+              </button>
+            )}
+            {isPaused && (
+              <button class="job-remove job-resume" title={t('job_resume')} onClick={(e) => { e.stopPropagation(); resumeJob(job.id); }}>
+                <Play size={13} strokeWidth={2.5} />
+              </button>
+            )}
+            {(isActive || isPaused) && (
+              <button class="job-remove job-cancel" title={t('job_cancel_upload')} onClick={(e) => { e.stopPropagation(); cancelJob(job.id); }}>
                 <X size={13} strokeWidth={2.5} />
               </button>
             )}

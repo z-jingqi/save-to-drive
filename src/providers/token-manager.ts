@@ -167,6 +167,12 @@ export async function refreshToken(
 }
 
 /** XHR PUT with upload progress — usable by provider upload implementations. */
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
+
 export function xhrPut(
   url: string,
   headers: Record<string, string>,
@@ -185,6 +191,6 @@ export function xhrPut(
     xhr.addEventListener('load', () => resolve({ status: xhr.status, text: xhr.responseText }));
     xhr.addEventListener('error', () => reject(new Error('XHR network error')));
     xhr.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
-    xhr.send(body instanceof Uint8Array ? body.buffer : body);
+    xhr.send(body instanceof Uint8Array ? toArrayBuffer(body) : body);
   });
 }

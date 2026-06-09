@@ -70,6 +70,28 @@ function App() {
 
       </ul>
 
+      <h2 class="options-section-title">{t('settings_about_title')}</h2>
+      <ul class="settings-list">
+        <li class="setting-row setting-row-stack">
+          <div class="setting-info">
+            <span class="setting-name">{t('settings_privacy_title')}</span>
+            <span class="setting-desc">{t('settings_privacy_desc')}</span>
+          </div>
+        </li>
+        <li class="setting-row setting-row-stack">
+          <div class="setting-info">
+            <span class="setting-name">{t('settings_large_files_title')}</span>
+            <span class="setting-desc">{t('settings_large_files_desc')}</span>
+          </div>
+        </li>
+        <li class="setting-row setting-row-stack">
+          <div class="setting-info">
+            <span class="setting-name">{t('settings_source_limits_title')}</span>
+            <span class="setting-desc">{t('settings_source_limits_desc')}</span>
+          </div>
+        </li>
+      </ul>
+
       {/* History */}
       {historyCount > 0 && (
         <>

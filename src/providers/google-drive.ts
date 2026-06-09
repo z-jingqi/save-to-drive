@@ -9,7 +9,6 @@ import {
   listFolders as driveListFolders,
   createFolder as driveCreateFolder,
   startResumableSession,
-  queryResumeOffset,
   uploadChunk,
 } from '../lib/drive-api.ts';
 import type { Provider, UploadResult } from './types.ts';

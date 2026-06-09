@@ -9,6 +9,7 @@ releases/
 .vite/
 .cache/
 coverage/
+.tmp-tests/
 
 ## logs
 *.log
