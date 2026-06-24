@@ -113,6 +113,14 @@ export async function createEmptyFile(
   };
 }
 
+export async function deleteDriveFile(fileId: string, token: string): Promise<void> {
+  const res = await fetch(`${BASE}/drive/v3/files/${encodeURIComponent(fileId)}`, {
+    method: 'DELETE',
+    headers: auth(token),
+  });
+  if (!res.ok && res.status !== 404) throw await responseError('deleteDriveFile', res);
+}
+
 // ── Resumable upload ──────────────────────────────────────────────────────────
 
 /**

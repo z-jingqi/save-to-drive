@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   cancelResumableSession,
   createEmptyFile,
+  deleteDriveFile,
   queryResumeStatus,
   startResumableSession,
   uploadChunk,
@@ -131,6 +132,19 @@ test('cancelResumableSession deletes the upload URI without uploading data', asy
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, 'https://upload.example/session-to-cancel');
+});
+
+test('deleteDriveFile deletes a created Drive file by id', async () => {
+  const calls = mockFetch((_url, init) => {
+    assert.equal(init.method, 'DELETE');
+    assert.deepEqual(init.headers, { Authorization: 'Bearer token-delete' });
+    return new Response(null, { status: 204 });
+  });
+
+  await deleteDriveFile('file/id with spaces', 'token-delete');
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://www.googleapis.com/drive/v3/files/file%2Fid%20with%20spaces');
 });
 
 test('uploadChunk sends Content-Range and returns Drive partial offset', async () => {

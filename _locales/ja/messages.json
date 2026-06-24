@@ -79,7 +79,7 @@
   },
   "job_paused":       { "message": "一時停止中" },
   "job_saved": {
-    "message": "$FOLDER$ に保存しました",
+    "message": "保存先：$FOLDER$",
     "placeholders": { "folder": { "content": "$1" } }
   },
   "job_open_file":     { "message": "ファイルを開く" },
@@ -97,6 +97,12 @@
   "job_retry":         { "message": "再試行" },
   "job_remove":        { "message": "削除" },
   "job_remove_record": { "message": "記録を削除" },
+  "job_delete_drive":  { "message": "Google Drive から削除" },
+  "job_delete_drive_failed": { "message": "Google Drive から削除できませんでした。再試行してください。" },
+  "job_delete_drive_confirm": {
+    "message": "「$FILENAME$」を Google Drive から削除しますか？ここからは元に戻せません。",
+    "placeholders": { "filename": { "content": "$1" } }
+  },
   "job_cancel":        { "message": "キャンセル" },
   "job_cancel_upload": { "message": "アップロードをキャンセル" },
   "job_pause":         { "message": "一時停止" },
@@ -105,7 +111,6 @@
   "job_duplicate_warning": { "message": "⚠ 保存済み" },
   "job_save_anyway":       { "message": "保存する" },
   "job_duplicate_title":   { "message": "このURLは以前に保存されています" },
-  "job_click_to_open": { "message": "Drive でファイルを開く" },
 
   "folder_last_used":        { "message": "前回:" },
   "folder_search_placeholder":{ "message": "フォルダを検索…" },

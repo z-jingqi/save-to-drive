@@ -79,7 +79,7 @@
   },
   "job_paused":       { "message": "Paused" },
   "job_saved": {
-    "message": "Saved · $FOLDER$",
+    "message": "Saved to: $FOLDER$",
     "placeholders": { "folder": { "content": "$1", "example": "My Drive" } }
   },
   "job_open_file":     { "message": "Open file" },
@@ -97,6 +97,12 @@
   "job_retry":         { "message": "Retry" },
   "job_remove":        { "message": "Remove" },
   "job_remove_record": { "message": "Remove record" },
+  "job_delete_drive":  { "message": "Delete from Google Drive" },
+  "job_delete_drive_failed": { "message": "Could not delete from Google Drive. Try again." },
+  "job_delete_drive_confirm": {
+    "message": "Delete \"$FILENAME$\" from Google Drive? This cannot be undone here.",
+    "placeholders": { "filename": { "content": "$1", "example": "photo.png" } }
+  },
   "job_cancel":        { "message": "Cancel" },
   "job_cancel_upload": { "message": "Cancel upload" },
   "job_pause":         { "message": "Pause" },
@@ -105,7 +111,6 @@
   "job_duplicate_warning": { "message": "⚠ Already saved" },
   "job_save_anyway":       { "message": "Save anyway" },
   "job_duplicate_title":   { "message": "This URL was previously saved to Drive" },
-  "job_click_to_open": { "message": "Open file in Drive" },
 
   "folder_last_used":        { "message": "Last used:" },
   "folder_search_placeholder":{ "message": "Search folders…" },

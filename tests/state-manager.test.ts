@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 import type { Job, ResumeUploadState } from '../src/lib/types.ts';
 
 type StorageArea = Record<string, unknown>;
@@ -96,6 +97,135 @@ test('jobs are persisted and restored for restart resume', async () => {
   assert.deepEqual(stateManager.getJob(job.id), job);
 });
 
+test('adding a job broadcasts popup state immediately', async () => {
+  runtimeMessages.length = 0;
+  const job: Job = {
+    id: 'job-broadcast-1',
+    url: 'https://source.example/image.png',
+    filename: 'image.png',
+    mimeType: 'image/png',
+    saveKind: 'image',
+    state: 'IDLE',
+    progress: 0,
+    providerId: 'google-drive',
+    folderId: null,
+    folderName: 'Google Drive',
+    retries: 0,
+  };
+
+  stateManager.addJob(job);
+  await settleAsyncWrites();
+
+  assert.deepEqual(runtimeMessages.at(-1), { type: 'STATE', jobs: stateManager.getJobs() });
+});
+
+test('in-progress save target lookup dedupes waiting and active jobs only', () => {
+  const base: Job = {
+    id: 'job-dedupe-idle',
+    url: 'https://source.example/repeated.png',
+    filename: 'repeated.png',
+    mimeType: 'image/png',
+    saveKind: 'image',
+    state: 'IDLE',
+    progress: 0,
+    providerId: 'google-drive',
+    folderId: null,
+    folderName: 'Google Drive',
+    retries: 0,
+  };
+
+  stateManager.addJob(base);
+  stateManager.addJob({ ...base, id: 'job-dedupe-success', state: 'SUCCESS' });
+  stateManager.addJob({ ...base, id: 'job-dedupe-error', state: 'ERROR' });
+
+  assert.equal(
+    stateManager.findInProgressJobBySaveTarget('https://source.example/repeated.png', 'image')?.id,
+    'job-dedupe-idle'
+  );
+  assert.equal(stateManager.findInProgressJobBySaveTarget('https://source.example/repeated.png', 'link'), undefined);
+  assert.equal(stateManager.findInProgressJobBySaveTarget('https://source.example/other.png', 'image'), undefined);
+
+  stateManager.removeJob('job-dedupe-idle');
+  assert.equal(stateManager.findInProgressJobBySaveTarget('https://source.example/repeated.png', 'image'), undefined);
+  stateManager.removeJob('job-dedupe-success');
+  stateManager.removeJob('job-dedupe-error');
+});
+
+test('deleted saved files are removed from duplicate history indexes', async () => {
+  clearStore(localStore);
+  await stateManager.addToHistory({
+    id: 'history-current',
+    url: 'https://source.example/repeated.png',
+    saveKind: 'image',
+    providerId: 'google-drive',
+    fileId: 'drive-file-current',
+    filename: 'repeated.png',
+    folderName: 'My Drive',
+    folderViewLink: 'https://drive/folders/root',
+    webViewLink: 'https://drive/file/current',
+    savedAt: 3,
+  });
+  await stateManager.addToHistory({
+    id: 'history-older-same-url',
+    url: 'https://source.example/repeated.png',
+    saveKind: 'image',
+    providerId: 'google-drive',
+    fileId: 'drive-file-older',
+    filename: 'repeated-copy.png',
+    folderName: 'My Drive',
+    folderViewLink: 'https://drive/folders/root',
+    webViewLink: 'https://drive/file/older',
+    savedAt: 2,
+  });
+  await stateManager.addToHistory({
+    id: 'history-other-kind',
+    url: 'https://source.example/repeated.png',
+    saveKind: 'link',
+    providerId: 'google-drive',
+    fileId: 'drive-file-link',
+    filename: 'repeated-link',
+    folderName: 'My Drive',
+    folderViewLink: 'https://drive/folders/root',
+    webViewLink: 'https://drive/file/link',
+    savedAt: 1,
+  });
+
+  await stateManager.removeHistoryEntriesForSavedFile({
+    id: 'history-current',
+    fileId: 'drive-file-current',
+    url: 'https://source.example/repeated.png',
+    saveKind: 'image',
+  });
+
+  assert.deepEqual((await stateManager.getHistory()).map(entry => entry.id), ['history-other-kind']);
+});
+
+test('history writes are serialized so immediate delete cannot be overwritten by add', async () => {
+  clearStore(localStore);
+  const add = stateManager.addToHistory({
+    id: 'history-race',
+    url: 'https://source.example/race.png',
+    saveKind: 'image',
+    providerId: 'google-drive',
+    fileId: 'drive-file-race',
+    filename: 'race.png',
+    folderName: 'My Drive',
+    folderViewLink: 'https://drive/folders/root',
+    webViewLink: 'https://drive/file/race',
+    savedAt: 1,
+  });
+  const remove = stateManager.removeHistoryEntriesForSavedFile({
+    id: 'history-race',
+    fileId: 'drive-file-race',
+    url: 'https://source.example/race.png',
+    saveKind: 'image',
+  });
+
+  await Promise.all([add, remove]);
+
+  assert.deepEqual(await stateManager.getHistory(), []);
+});
+
 test('prefs normalize unsupported legacy provider ids to Google Drive', async () => {
   clearStore(syncStore);
   syncStore.providerId = 'baidu';
@@ -186,4 +316,5 @@ function clearStore(store: StorageArea): void {
 async function settleAsyncWrites(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
+  await delay(0);
 }

@@ -139,9 +139,10 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
   font-size: 12px;
   color: var(--text);
   font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 0;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .folder-setting-actions {
@@ -192,16 +193,71 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
 .history-list { list-style: none; max-height: 180px; overflow-y: auto; }
 
 .history-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 14px;
   border-bottom: 1px solid var(--border);
   cursor: pointer;
+  overflow: hidden;
   transition: background 0.12s;
 }
 .history-row:hover { background: var(--hover); }
 .history-row:last-child { border-bottom: none; }
+
+.item-deleting {
+  background: var(--hover);
+  cursor: wait;
+  pointer-events: none;
+}
+
+.item-deleting::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    transparent 34%,
+    rgba(255, 255, 255, 0.62) 50%,
+    transparent 66%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: item-shimmer 1.05s ease-in-out infinite;
+}
+
+@media (prefers-color-scheme: dark) {
+  .item-deleting::after {
+    background: linear-gradient(
+      105deg,
+      transparent 0%,
+      transparent 34%,
+      rgba(255, 255, 255, 0.14) 50%,
+      transparent 66%,
+      transparent 100%
+    );
+  }
+}
+
+.item-exiting {
+  pointer-events: none;
+  animation: item-exit 0.24s ease forwards;
+}
+
+@keyframes item-shimmer {
+  to { transform: translateX(100%); }
+}
+
+@keyframes item-exit {
+  to {
+    opacity: 0;
+    transform: translateX(12px) scale(0.98);
+  }
+}
 
 .history-filename {
   flex: 1;
@@ -214,6 +270,19 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
   /* button reset — element is now a <button> */
   background: none; border: none; padding: 0; font-family: inherit; text-align: left;
 }
+.history-filename:disabled {
+  cursor: default;
+}
+
+.history-delete-error {
+  display: inline-flex;
+  align-items: center;
+  max-width: 120px;
+  font-size: 11px;
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+.history-delete-error { color: var(--red); }
 
 .history-right {
   display: flex;
@@ -228,8 +297,36 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
   max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .history-folder:hover { color: var(--blue); text-decoration: underline; }
+.history-folder:disabled {
+  cursor: default;
+}
+.history-folder:disabled:hover {
+  color: var(--sub);
+  text-decoration: none;
+}
 .history-divider { font-size: 10px; color: var(--border); }
 .history-time { font-size: 11px; color: var(--sub); opacity: 0.7; width: 6em; text-align: right; flex-shrink: 0; }
+.history-delete-drive {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--sub);
+  cursor: pointer;
+}
+.history-delete-drive:hover { color: var(--red); background: var(--hover); }
+.history-delete-drive:disabled {
+  cursor: default;
+  opacity: 0.68;
+}
+.history-delete-drive:disabled:hover {
+  color: var(--sub);
+  background: none;
+}
 
 .history-footer { padding: 5px 14px 8px; display: flex; justify-content: flex-end; }
 .history-clear-btn {
@@ -285,7 +382,12 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
 }
 
 /* ── Job list ────────────────────────────────────────────────── */
-.job-list { list-style: none; }
+.job-list {
+  list-style: none;
+  max-height: 360px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 
 .job-row {
   position: relative;
@@ -293,14 +395,12 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
   border-bottom: 1px solid var(--border);
   display: flex;
   flex-direction: row;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
+  overflow: hidden;
   transition: background 0.15s;
 }
 .job-row:last-child { border-bottom: none; }
-
-.job-clickable { cursor: pointer; }
-.job-clickable:hover { background: var(--hover); }
 
 /* Dismiss button — hidden until row is hovered */
 .job-remove {
@@ -325,6 +425,14 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
 }
 .job-row:hover .job-remove { opacity: 1; }
 .job-remove:hover { background: var(--border); color: var(--text); }
+.job-remove:disabled {
+  cursor: default;
+  opacity: 0.68;
+}
+.job-remove:disabled:hover {
+  background: none;
+  color: var(--sub);
+}
 /* Cancel on active rows is always visible — user needs to know they can stop it */
 .job-cancel { opacity: 1 !important; }
 .job-pause,
@@ -332,6 +440,21 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
   right: 32px;
   opacity: 1 !important;
 }
+.job-delete-drive {
+  right: 32px;
+}
+.job-delete-drive:hover {
+  color: var(--red);
+}
+
+.delete-error-text {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.25;
+}
+.delete-error-text { color: var(--red); }
 
 /* ── Thumbnail wrapper + base thumb ─────────────────────────── */
 
@@ -475,21 +598,109 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
 .job-content {
   flex: 1;
   min-width: 0;
+  min-height: 56px;
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 4px;
   padding-right: 20px; /* room for the × button */
 }
+.job-content-success {
+  justify-content: space-between;
+  padding-right: 44px; /* room for record/remove and Drive delete buttons */
+}
 
-.job-meta { display: flex; flex-direction: column; gap: 1px; }
+.job-meta {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+.job-meta-success {
+  min-height: 56px;
+  justify-content: space-between;
+  gap: 8px;
+}
 .job-name {
+  display: block;
   font-weight: 500;
   font-size: 13px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.job-folder { color: var(--sub); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.job-meta-success .job-name {
+  line-height: 1.25;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+.job-name-link {
+  width: fit-content;
+  max-width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.job-meta-success .job-name-link {
+  width: 100%;
+}
+.job-name-link:hover {
+  color: var(--blue);
+  text-decoration: underline;
+}
+.job-name-link:disabled {
+  cursor: default;
+  color: var(--text);
+  text-decoration: none;
+}
+.job-folder {
+  color: var(--sub);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.job-folder-saved {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 7px;
+  row-gap: 1px;
+}
+.job-folder-saved-label {
+  color: var(--sub);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.job-folder-saved-name {
+  display: inline;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--green);
+  font-weight: 700;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.job-folder-saved-name:hover {
+  text-decoration: underline;
+}
+.job-folder-saved-name:disabled {
+  cursor: default;
+  text-decoration: none;
+}
 
 /* Progress bar */
 .progress-track {
@@ -509,17 +720,10 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
 
 .status-text      { color: var(--sub); font-size: 11px; }
 .status-upload    { color: var(--blue); }
-.view-hint        { color: var(--blue); font-size: 11px; display: inline-flex; align-items: center; gap: 5px; }
-.hint-link        { background: none; border: none; padding: 0; font: inherit; font-size: 11px; color: var(--blue); cursor: pointer; }
-.hint-link:hover  { text-decoration: underline; }
-.hint-link-sub    { color: var(--sub); }
-.hint-sep         { color: var(--border); }
 
 /* Shared file-link style — used on filenames that open the file in Drive */
 .file-link        { color: inherit; cursor: pointer; }
 .file-link:hover  { color: var(--blue); text-decoration: underline; }
-.job-folder-saved { color: var(--green); }
-
 .error-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .error-text { color: var(--red); font-size: 11px; flex: 1; min-width: 0; word-break: break-word; }
 .retry-btn {
@@ -536,6 +740,11 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
   cursor: pointer;
 }
 .retry-btn:hover { background: var(--hover); }
+.retry-btn:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+.retry-btn:disabled:hover { background: none; }
 
 /* ── Rename row (IDLE + rename mode on) ──────────────────────── */
 .rename-row { gap: 8px; cursor: default; align-items: center; }

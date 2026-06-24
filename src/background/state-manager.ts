@@ -1,13 +1,24 @@
-import type { Job, Prefs, Folder, HistoryEntry, ResumeUploadState } from '../lib/types.ts';
+import type { Job, Prefs, Folder, HistoryEntry, ResumeUploadState, SaveKind } from '../lib/types.ts';
 
 // ── Job store ─────────────────────────────────────────────────────────────────
 
 const jobs = new Map<string, Job>();
 const JOBS_KEY = 'jobs';
+let persistJobsQueue: Promise<void> = Promise.resolve();
 
 function persistJobs(): void {
-  chrome.storage.local.set({ [JOBS_KEY]: getJobs() }).catch(() => {
-    // Extension storage can be briefly unavailable during shutdown.
+  const snapshot = getJobs();
+  persistJobsQueue = persistJobsQueue
+    .catch(() => {})
+    .then(() => chrome.storage.local.set({ [JOBS_KEY]: snapshot }))
+    .catch(() => {
+      // Extension storage can be briefly unavailable during shutdown.
+    });
+}
+
+function broadcastJobs(): void {
+  chrome.runtime.sendMessage({ type: 'STATE', jobs: getJobs() }).catch(() => {
+    // Popup may not be open — ignore
   });
 }
 
@@ -23,6 +34,7 @@ export function addJob(job: Job): void {
   jobs.set(job.id, job);
   persistJobs();
   updateBadge();
+  broadcastJobs();
 }
 
 export function updateJob(id: string, patch: Partial<Job>): void {
@@ -33,10 +45,7 @@ export function updateJob(id: string, patch: Partial<Job>): void {
   persistJobs();
   if (becameSuccess) flashSuccessBadge();
   else updateBadge();
-  // Push live update to any open popup
-  chrome.runtime.sendMessage({ type: 'STATE', jobs: getJobs() }).catch(() => {
-    // Popup may not be open — ignore
-  });
+  broadcastJobs();
 }
 
 export function getJob(id: string): Job | undefined {
@@ -47,11 +56,21 @@ export function getJobs(): Job[] {
   return [...jobs.values()];
 }
 
+export function findInProgressJobBySaveTarget(url: string, saveKind?: SaveKind): Job | undefined {
+  const targetKind = saveKind ?? 'link';
+  return [...jobs.values()].find(job =>
+    job.url === url &&
+    (job.saveKind ?? 'link') === targetKind &&
+    job.state !== 'SUCCESS' &&
+    job.state !== 'ERROR'
+  );
+}
+
 export function removeJob(id: string): void {
   jobs.delete(id);
   persistJobs();
   updateBadge();
-  chrome.runtime.sendMessage({ type: 'STATE', jobs: getJobs() }).catch(() => {});
+  broadcastJobs();
 }
 
 // ── Upload queue (max 3 concurrent) ──────────────────────────────────────────
@@ -177,20 +196,55 @@ export async function setLastFolderForProvider(providerId: string, folder: Folde
 
 const HISTORY_KEY = 'saveHistory';
 const HISTORY_MAX = 20;
+let historyQueue: Promise<void> = Promise.resolve();
+
+function enqueueHistoryWrite<T>(operation: () => Promise<T>): Promise<T> {
+  const run = historyQueue.catch(() => {}).then(operation);
+  historyQueue = run.then(() => undefined, () => undefined);
+  return run;
+}
 
 export async function addToHistory(entry: HistoryEntry): Promise<void> {
-  const s = await chrome.storage.local.get(HISTORY_KEY);
-  const existing: HistoryEntry[] = s[HISTORY_KEY] ?? [];
-  await chrome.storage.local.set({ [HISTORY_KEY]: [entry, ...existing].slice(0, HISTORY_MAX) });
+  await enqueueHistoryWrite(async () => {
+    const s = await chrome.storage.local.get(HISTORY_KEY);
+    const existing: HistoryEntry[] = s[HISTORY_KEY] ?? [];
+    await chrome.storage.local.set({ [HISTORY_KEY]: [entry, ...existing].slice(0, HISTORY_MAX) });
+  });
 }
 
 export async function getHistory(): Promise<HistoryEntry[]> {
+  await historyQueue.catch(() => {});
   const s = await chrome.storage.local.get(HISTORY_KEY);
   return s[HISTORY_KEY] ?? [];
 }
 
 export async function clearHistory(): Promise<void> {
-  await chrome.storage.local.remove(HISTORY_KEY);
+  await enqueueHistoryWrite(async () => {
+    await chrome.storage.local.remove(HISTORY_KEY);
+  });
+}
+
+export async function removeHistoryEntriesForSavedFile(args: {
+  id?: string;
+  fileId?: string;
+  url?: string;
+  saveKind?: HistoryEntry['saveKind'];
+}): Promise<void> {
+  await enqueueHistoryWrite(async () => {
+    const s = await chrome.storage.local.get(HISTORY_KEY);
+    const existing: HistoryEntry[] = s[HISTORY_KEY] ?? [];
+    const next = existing.filter(entry => {
+      if (args.id && entry.id === args.id) return false;
+      if (args.fileId && entry.fileId === args.fileId) return false;
+      if (
+        args.url &&
+        entry.url === args.url &&
+        (entry.saveKind ?? 'link') === (args.saveKind ?? 'link')
+      ) return false;
+      return true;
+    });
+    await chrome.storage.local.set({ [HISTORY_KEY]: next });
+  });
 }
 
 // ── Resumable upload state ───────────────────────────────────────────────────

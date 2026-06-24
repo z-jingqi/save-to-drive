@@ -4,7 +4,7 @@
  *
  * Usage:
  *   t('popup_change')                        → "Change" / "更改" / etc.
- *   t('job_saved', job.folderName)           → "Saved · My Photos"
+ *   t('job_saved', job.folderName)           → "Saved to My Photos"
  *   t('job_fetching_pct', String(progress))  → "Fetching… 47%"
  */
 export function t(key: string, ...subs: string[]): string {

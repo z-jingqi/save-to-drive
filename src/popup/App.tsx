@@ -1,5 +1,5 @@
 import { render } from 'preact';
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 import { Folder as FolderIcon, Settings } from 'lucide-react';
 import { t } from '../lib/i18n.ts';
 import type { Job, Prefs, Folder, HistoryEntry } from '../lib/types.ts';
@@ -10,25 +10,43 @@ import { ProviderIcon } from './components/ProviderIcon.tsx';
 import { HistoryList } from './components/HistoryList.tsx';
 
 const PROVIDER_ID = 'google-drive';
+const DELETE_EXIT_MS = 260;
+
+type DeleteKind = 'job' | 'history';
+
+function deleteKey(kind: DeleteKind, id: string): string {
+  return `${kind}:${id}`;
+}
 
 function App() {
   const [prefs, setPrefsState] = useState<Prefs>({ providerId: PROVIDER_ID, lastFolders: {}, renameBeforeSave: false, notifications: true });
   const [jobs, setJobs] = useState<Job[]>([]);
   const [changingFolder, setChangingFolder] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [deletingIds, setDeletingIds] = useState<Record<string, true>>({});
+  const [exitingIds, setExitingIds] = useState<Record<string, true>>({});
+  const [deleteErrors, setDeleteErrors] = useState<Record<string, string>>({});
+  const [exitingJobs, setExitingJobs] = useState<Record<string, Job>>({});
+  const [exitingHistory, setExitingHistory] = useState<Record<string, HistoryEntry>>({});
+  const receivedLiveState = useRef(false);
 
   useEffect(() => {
     chrome.runtime.sendMessage({ type: 'GET_PREFS' }, (res) => {
       if (res?.type === 'PREFS') setPrefsState(res.prefs);
     });
     chrome.runtime.sendMessage({ type: 'GET_STATE' }, (res) => {
-      if (res?.type === 'STATE') setJobs(res.jobs as Job[]);
+      if (res?.type === 'STATE' && !receivedLiveState.current) {
+        setJobs(res.jobs as Job[]);
+      }
     });
     chrome.runtime.sendMessage({ type: 'GET_HISTORY' }, (res) => {
       if (res?.type === 'HISTORY') setHistory(res.entries as HistoryEntry[]);
     });
     const onMsg = (msg: { type: string; jobs?: Job[] }) => {
-      if (msg.type === 'STATE' && msg.jobs) setJobs(msg.jobs);
+      if (msg.type === 'STATE' && msg.jobs) {
+        receivedLiveState.current = true;
+        setJobs(msg.jobs);
+      }
     };
     chrome.runtime.onMessage.addListener(onMsg);
     return () => chrome.runtime.onMessage.removeListener(onMsg);
@@ -53,6 +71,117 @@ function App() {
     chrome.runtime.sendMessage({ type: 'SET_PREFS', prefs: { lastFolders: updated } });
     setChangingFolder(false);
   };
+
+  const refreshHistory = () => {
+    chrome.runtime.sendMessage({ type: 'GET_HISTORY' }, (res) => {
+      if (res?.type === 'HISTORY') setHistory(res.entries as HistoryEntry[]);
+    });
+  };
+
+  const beginDelete = (kind: DeleteKind, id: string) => {
+    const key = deleteKey(kind, id);
+    setDeletingIds(prev => ({ ...prev, [key]: true }));
+    setDeleteErrors(prev => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const failDelete = (kind: DeleteKind, id: string) => {
+    const key = deleteKey(kind, id);
+    setDeletingIds(prev => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    setDeleteErrors(prev => ({ ...prev, [key]: t('job_delete_drive_failed') }));
+  };
+
+  const finishDelete = (kind: DeleteKind, id: string) => {
+    const key = deleteKey(kind, id);
+    setDeletingIds(prev => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    setExitingIds(prev => ({ ...prev, [key]: true }));
+    window.setTimeout(() => {
+      setExitingIds(prev => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      if (kind === 'job') {
+        setExitingJobs(prev => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      } else {
+        setExitingHistory(prev => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        refreshHistory();
+      }
+    }, DELETE_EXIT_MS);
+  };
+
+  const deleteJobRemoteFile = (job: Job) => {
+    if (!job.fileId) return;
+    if (!window.confirm(t('job_delete_drive_confirm', job.filename))) return;
+    beginDelete('job', job.id);
+    setExitingJobs(prev => ({ ...prev, [job.id]: job }));
+    chrome.runtime.sendMessage({ type: 'DELETE_SAVED_FILE', jobId: job.id }, (res) => {
+      if (res?.type === 'ERROR') {
+        setExitingJobs(prev => {
+          const next = { ...prev };
+          delete next[job.id];
+          return next;
+        });
+        failDelete('job', job.id);
+        return;
+      }
+      finishDelete('job', job.id);
+    });
+  };
+
+  const deleteHistoryRemoteFile = (entry: HistoryEntry) => {
+    if (!entry.fileId || !entry.providerId) return;
+    if (!window.confirm(t('job_delete_drive_confirm', entry.filename))) return;
+    beginDelete('history', entry.id);
+    setExitingHistory(prev => ({ ...prev, [entry.id]: entry }));
+    chrome.runtime.sendMessage({
+      type: 'DELETE_HISTORY_FILE',
+      historyId: entry.id,
+      providerId: entry.providerId,
+      fileId: entry.fileId,
+      url: entry.url,
+      saveKind: entry.saveKind,
+    }, (res) => {
+      if (res?.type === 'ERROR') {
+        setExitingHistory(prev => {
+          const next = { ...prev };
+          delete next[entry.id];
+          return next;
+        });
+        failDelete('history', entry.id);
+        return;
+      }
+      finishDelete('history', entry.id);
+    });
+  };
+
+  const visibleJobs = [
+    ...jobs,
+    ...Object.values(exitingJobs).filter(job => !jobs.some(item => item.id === job.id)),
+  ];
+  const visibleHistory = [
+    ...history,
+    ...Object.values(exitingHistory).filter(entry => !history.some(item => item.id === entry.id)),
+  ];
 
   return (
     <div class="app">
@@ -126,16 +255,32 @@ function App() {
       )}
 
       {/* Upload list */}
-      {jobs.length > 0 && <JobList jobs={jobs} renameBeforeSave={prefs.renameBeforeSave} />}
+      {visibleJobs.length > 0 && (
+        <JobList
+          jobs={visibleJobs}
+          renameBeforeSave={prefs.renameBeforeSave}
+          deletingIds={deletingIds}
+          exitingIds={exitingIds}
+          deleteErrors={deleteErrors}
+          onDeleteSavedFile={deleteJobRemoteFile}
+        />
+      )}
 
       {/* History or empty state */}
-      {!changingFolder && jobs.length === 0 && history.length > 0 && (
-        <HistoryList entries={history} onClear={() => {
-          chrome.runtime.sendMessage({ type: 'CLEAR_HISTORY' });
-          setHistory([]);
-        }} />
+      {!changingFolder && visibleJobs.length === 0 && visibleHistory.length > 0 && (
+        <HistoryList
+          entries={visibleHistory}
+          onDeleteRemote={deleteHistoryRemoteFile}
+          deletingIds={deletingIds}
+          exitingIds={exitingIds}
+          deleteErrors={deleteErrors}
+          onClear={() => {
+            chrome.runtime.sendMessage({ type: 'CLEAR_HISTORY' });
+            setHistory([]);
+          }}
+        />
       )}
-      {!changingFolder && jobs.length === 0 && history.length === 0 && (
+      {!changingFolder && visibleJobs.length === 0 && visibleHistory.length === 0 && (
         <p class="empty">{t('popup_empty_state')}</p>
       )}
     </div>

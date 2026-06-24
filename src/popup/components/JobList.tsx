@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { X, RotateCcw, ExternalLink, Eye, Pause, Play } from 'lucide-react';
+import { X, RotateCcw, Eye, Pause, Play, Trash2 } from 'lucide-react';
 import { editableFilename } from '../../lib/filename.ts';
 import { t } from '../../lib/i18n.ts';
 import type { Job } from '../../lib/types.ts';
@@ -71,6 +71,19 @@ function folderUrl(job: Job): string {
 
 function fileUrl(job: Job): string {
   return job.webViewLink || folderUrl(job);  // || guards against empty string
+}
+
+function savedFolderParts(folderName: string): { before: string; name: string; after: string } {
+  const label = t('job_saved', folderName);
+  const folderIndex = label.indexOf(folderName);
+  if (folderIndex < 0) {
+    return { before: '', name: folderName, after: '' };
+  }
+  return {
+    before: label.slice(0, folderIndex),
+    name: folderName,
+    after: label.slice(folderIndex + folderName.length),
+  };
 }
 
 const openInDrive  = (url: string)   => chrome.tabs.create({ url });
@@ -150,10 +163,18 @@ function RenameRow({ job }: { job: Job }) {
 
 // ── Job list ──────────────────────────────────────────────────────────────────
 
-interface Props { jobs: Job[]; renameBeforeSave: boolean }
+interface Props {
+  jobs: Job[];
+  renameBeforeSave: boolean;
+  deletingIds: Record<string, true>;
+  exitingIds: Record<string, true>;
+  deleteErrors: Record<string, string>;
+  onDeleteSavedFile: (job: Job) => void;
+}
 
-export function JobList({ jobs, renameBeforeSave }: Props) {
+export function JobList({ jobs, renameBeforeSave, deletingIds, exitingIds, deleteErrors, onDeleteSavedFile }: Props) {
   const [confirmedDuplicateIds, setConfirmedDuplicateIds] = useState<string[]>([]);
+  const listRef = useRef<HTMLUListElement>(null);
   const confirmDuplicate = (id: string) =>
     setConfirmedDuplicateIds(prev => [...prev, id]);
 
@@ -167,8 +188,14 @@ export function JobList({ jobs, renameBeforeSave }: Props) {
       .forEach(j => startJob(j.id, j.filename));
   }, [renameBeforeSave]);
 
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    list.scrollTop = list.scrollHeight;
+  }, [jobs.length, jobs[jobs.length - 1]?.id, jobs[jobs.length - 1]?.state]);
+
   return (
-    <ul class="job-list">
+    <ul class="job-list" ref={listRef}>
       {jobs.map(job => {
         if (job.state === 'IDLE' && job.isDuplicate && !confirmedDuplicateIds.includes(job.id)) {
           const onConfirm = renameBeforeSave
@@ -184,24 +211,52 @@ export function JobList({ jobs, renameBeforeSave }: Props) {
         const isError   = job.state === 'ERROR';
         const isPaused  = job.state === 'PAUSED';
         const isActive  = job.state === 'AUTHING' || job.state === 'FETCHING' || job.state === 'UPLOADING';
+        const deleteStateKey = `job:${job.id}`;
+        const isDeleting = Boolean(deletingIds[deleteStateKey]);
+        const isExiting = Boolean(exitingIds[deleteStateKey]);
+        const deleteError = deleteErrors[deleteStateKey];
+        const isLocked = isDeleting || isExiting;
+        const savedFolder = isSuccess ? savedFolderParts(job.folderName) : null;
 
         return (
           <li
             key={job.id}
-            class={`job-row job-${job.state.toLowerCase()}${isSuccess ? ' job-clickable' : ''}`}
-            onClick={isSuccess ? () => openInDrive(fileUrl(job)) : undefined}
-            title={isSuccess ? t('job_click_to_open') : undefined}
+            class={`job-row job-${job.state.toLowerCase()}${isDeleting ? ' item-deleting' : ''}${isExiting ? ' item-exiting' : ''}`}
           >
             <ThumbCell job={job} />
 
-            <div class="job-content">
-              <div class="job-meta">
-                <span class="job-name" title={job.filename}>
-                  {job.filename}
-                </span>
-                <span class={`job-folder${isSuccess ? ' job-folder-saved' : ''}`}>
-                  {isSuccess ? t('job_saved', job.folderName) : job.folderName}
-                </span>
+            <div class={`job-content${isSuccess ? ' job-content-success' : ''}`}>
+              <div class={`job-meta${isSuccess ? ' job-meta-success' : ''}`}>
+                {isSuccess ? (
+                  <button
+                    class="job-name job-name-link"
+                    disabled={isLocked}
+                    title={t('job_open_file')}
+                    onClick={(e) => { e.stopPropagation(); if (!isLocked) openInDrive(fileUrl(job)); }}
+                  >
+                    {job.filename}
+                  </button>
+                ) : (
+                  <span class="job-name" title={job.filename}>
+                    {job.filename}
+                  </span>
+                )}
+                {isSuccess ? (
+                  <span class="job-folder job-folder-saved" title={job.folderName}>
+                    {savedFolder?.before && <span class="job-folder-saved-label">{savedFolder.before}</span>}
+                    <button
+                      class="job-folder-saved-name"
+                      disabled={isLocked}
+                      title={t('job_open_folder')}
+                      onClick={(e) => { e.stopPropagation(); if (!isLocked) openInDrive(folderUrl(job)); }}
+                    >
+                      {savedFolder?.name}
+                    </button>
+                    {savedFolder?.after && <span class="job-folder-saved-label">{savedFolder.after}</span>}
+                  </span>
+                ) : (
+                  <span class="job-folder" title={job.folderName}>{job.folderName}</span>
+                )}
               </div>
 
               {(isActive || isPaused) && (
@@ -210,15 +265,9 @@ export function JobList({ jobs, renameBeforeSave }: Props) {
                 </span>
               )}
 
-              {isSuccess && (
-                <span class="view-hint">
-                  <button class="hint-link" onClick={(e) => { e.stopPropagation(); openInDrive(fileUrl(job)); }}>
-                    {t('job_open_file')} <ExternalLink size={11} strokeWidth={2.5} style={{ verticalAlign: 'middle', marginBottom: '1px' }} />
-                  </button>
-                  <span class="hint-sep">·</span>
-                  <button class="hint-link hint-link-sub" onClick={(e) => { e.stopPropagation(); openInDrive(folderUrl(job)); }}>
-                    {t('job_open_folder')}
-                  </button>
+              {deleteError && !isDeleting && (
+                <span class="delete-error-text">
+                  {deleteError}
                 </span>
               )}
 
@@ -227,7 +276,7 @@ export function JobList({ jobs, renameBeforeSave }: Props) {
                   <span class="error-text" title={job.error}>
                     {errorLabel(job)}
                   </span>
-                  <button class="retry-btn" onClick={(e) => { e.stopPropagation(); retryJob(job.id); }}>
+                  <button class="retry-btn" disabled={isLocked} onClick={(e) => { e.stopPropagation(); if (!isLocked) retryJob(job.id); }}>
                     <RotateCcw size={11} strokeWidth={2.5} /> {t('job_retry')}
                   </button>
                 </div>
@@ -235,22 +284,27 @@ export function JobList({ jobs, renameBeforeSave }: Props) {
             </div>
 
             {(isSuccess || isError) && (
-              <button class="job-remove" title={isSuccess ? t('job_remove_record') : t('job_remove')} onClick={(e) => { e.stopPropagation(); removeJob(job.id); }}>
+              <button class="job-remove" disabled={isLocked} title={isSuccess ? t('job_remove_record') : t('job_remove')} onClick={(e) => { e.stopPropagation(); if (!isLocked) removeJob(job.id); }}>
                 <X size={13} strokeWidth={2.5} />
               </button>
             )}
+            {isSuccess && job.fileId && (
+              <button class="job-remove job-delete-drive" disabled={isLocked} title={t('job_delete_drive')} onClick={(e) => { e.stopPropagation(); if (!isLocked) onDeleteSavedFile(job); }}>
+                <Trash2 size={13} strokeWidth={2.5} />
+              </button>
+            )}
             {isActive && (
-              <button class="job-remove job-pause" title={t('job_pause')} onClick={(e) => { e.stopPropagation(); pauseJob(job.id); }}>
+              <button class="job-remove job-pause" disabled={isLocked} title={t('job_pause')} onClick={(e) => { e.stopPropagation(); if (!isLocked) pauseJob(job.id); }}>
                 <Pause size={13} strokeWidth={2.5} />
               </button>
             )}
             {isPaused && (
-              <button class="job-remove job-resume" title={t('job_resume')} onClick={(e) => { e.stopPropagation(); resumeJob(job.id); }}>
+              <button class="job-remove job-resume" disabled={isLocked} title={t('job_resume')} onClick={(e) => { e.stopPropagation(); if (!isLocked) resumeJob(job.id); }}>
                 <Play size={13} strokeWidth={2.5} />
               </button>
             )}
             {(isActive || isPaused) && (
-              <button class="job-remove job-cancel" title={t('job_cancel_upload')} onClick={(e) => { e.stopPropagation(); cancelJob(job.id); }}>
+              <button class="job-remove job-cancel" disabled={isLocked} title={t('job_cancel_upload')} onClick={(e) => { e.stopPropagation(); if (!isLocked) cancelJob(job.id); }}>
                 <X size={13} strokeWidth={2.5} />
               </button>
             )}

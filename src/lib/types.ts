@@ -66,6 +66,8 @@ export interface HistoryEntry {
   id: string;
   url: string;
   saveKind?: SaveKind;
+  providerId?: string;
+  fileId?: string;
   filename: string;
   folderName: string;
   folderViewLink: string;
@@ -100,6 +102,8 @@ export type PopupMessage =
   | { type: 'CREATE_FOLDER'; name: string; parentId: string | null }
   | { type: 'RETRY_JOB'; jobId: string }
   | { type: 'REMOVE_JOB'; jobId: string }
+  | { type: 'DELETE_SAVED_FILE'; jobId: string }
+  | { type: 'DELETE_HISTORY_FILE'; historyId: string; providerId: string; fileId: string; url?: string; saveKind?: SaveKind }
   | { type: 'CANCEL_JOB'; jobId: string }
   | { type: 'PAUSE_JOB'; jobId: string }
   | { type: 'RESUME_JOB'; jobId: string }

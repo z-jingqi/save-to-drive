@@ -79,7 +79,7 @@
   },
   "job_paused":       { "message": "已暂停" },
   "job_saved": {
-    "message": "已保存到 $FOLDER$",
+    "message": "已保存到：$FOLDER$",
     "placeholders": { "folder": { "content": "$1" } }
   },
   "job_open_file":     { "message": "打开文件" },
@@ -97,6 +97,12 @@
   "job_retry":         { "message": "重试" },
   "job_remove":        { "message": "移除" },
   "job_remove_record": { "message": "移除记录" },
+  "job_delete_drive":  { "message": "从 Google Drive 删除" },
+  "job_delete_drive_failed": { "message": "无法从 Google Drive 删除，请重试。" },
+  "job_delete_drive_confirm": {
+    "message": "要从 Google Drive 删除“$FILENAME$”吗？此操作无法在这里撤销。",
+    "placeholders": { "filename": { "content": "$1" } }
+  },
   "job_cancel":        { "message": "取消" },
   "job_cancel_upload": { "message": "取消上传" },
   "job_pause":         { "message": "暂停" },
@@ -105,7 +111,6 @@
   "job_duplicate_warning": { "message": "⚠ 已保存过" },
   "job_save_anyway":       { "message": "仍然保存" },
   "job_duplicate_title":   { "message": "该链接之前已保存过" },
-  "job_click_to_open": { "message": "在 Google Drive 中打开文件" },
 
   "folder_last_used":        { "message": "上次使用：" },
   "folder_search_placeholder":{ "message": "搜索文件夹…" },

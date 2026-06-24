@@ -16,12 +16,13 @@ import { capturePage, type PageCaptureFormat } from './page-capture.ts';
 import {
   addJob, enqueue, getJobs, getPrefs, getPrefsSync, initPrefs,
   setPrefs, setLastFolderForProvider, getLastFolder, updateJob, removeJob,
-  getHistory, clearHistory, initSavesToday, initJobs, pruneExpiredResumeUploadStates,
+  getHistory, clearHistory, removeHistoryEntriesForSavedFile, initSavesToday, initJobs, pruneExpiredResumeUploadStates,
+  findInProgressJobBySaveTarget,
 } from './state-manager.ts';
-import { runJob, onOffscreenMessage, discardResumeUpload, setInlineUploadContent } from './upload.ts';
+import { runJob, onOffscreenMessage, discardResumeUpload, setInlineUploadContent, deleteRemoteFile } from './upload.ts';
 
 // Warm the prefs cache, sync context menu, load daily save count
-initPrefs()
+const startupReady = initPrefs()
   .then(async () => {
     await initJobs();
     await pruneExpiredResumeUploadStates();
@@ -31,6 +32,10 @@ initPrefs()
     resumeInterruptedJobs();
   })
   .catch(console.error);
+
+async function waitForStartup(): Promise<void> {
+  await startupReady;
+}
 
 // ── Context menu click ────────────────────────────────────────────────────────
 
@@ -44,6 +49,8 @@ async function handleContextMenuAction(
   info: chrome.contextMenus.OnClickData,
   tab?: chrome.tabs.Tab
 ): Promise<void> {
+  await waitForStartup();
+
   if (action === MENU_SAVE_LINK_ID) {
     if (!info.linkUrl) return;
     const filename = inferFilename(info.linkUrl, tab?.title);
@@ -89,6 +96,7 @@ async function startPageSave(format: PageCaptureFormat, tab?: chrome.tabs.Tab): 
     saveKind,
     pageTitle: title,
   });
+  if (reuseInProgressJob(job)) return;
   addJob(job);
   chrome.action.openPopup().catch(() => {});
 
@@ -127,6 +135,7 @@ async function startPageSave(format: PageCaptureFormat, tab?: chrome.tabs.Tab): 
 }
 
 function startJobFlow(job: Job): void {
+  if (reuseInProgressJob(job)) return;
   addJob(job);
   chrome.action.openPopup().catch(() => {});
 
@@ -141,6 +150,13 @@ function startJobFlow(job: Job): void {
   }
 
   void prepareJobForUpload(job.id);
+}
+
+function reuseInProgressJob(job: Job): boolean {
+  const existing = findInProgressJobBySaveTarget(job.url, job.saveKind);
+  if (!existing) return false;
+  chrome.action.openPopup().catch(() => {});
+  return true;
 }
 
 async function prepareJobForUpload(jobId: string): Promise<void> {
@@ -275,6 +291,7 @@ chrome.runtime.onMessage.addListener((
 
 async function handlePopupMessage(msg: PopupMessage, send: (r: unknown) => void): Promise<void> {
   try {
+    await waitForStartup();
     switch (msg.type) {
       case 'GET_STATE':
         send({ type: 'STATE', jobs: getJobs() });
@@ -367,6 +384,33 @@ async function handlePopupMessage(msg: PopupMessage, send: (r: unknown) => void)
         const job = getJobs().find(j => j.id === msg.jobId);
         if (job?.state !== 'SUCCESS') await discardResumeUpload(msg.jobId, true);
         removeJob(msg.jobId);
+        send({ type: 'OK' });
+        break;
+      }
+
+      case 'DELETE_SAVED_FILE': {
+        const job = getJobs().find(j => j.id === msg.jobId);
+        if (!job?.fileId) throw new Error('This saved file cannot be deleted from Drive');
+        await deleteRemoteFile(job.providerId, job.fileId, true);
+        await removeHistoryEntriesForSavedFile({
+          id: job.id,
+          fileId: job.fileId,
+          url: job.url,
+          saveKind: job.saveKind,
+        });
+        removeJob(job.id);
+        send({ type: 'OK' });
+        break;
+      }
+
+      case 'DELETE_HISTORY_FILE': {
+        await deleteRemoteFile(msg.providerId, msg.fileId, true);
+        await removeHistoryEntriesForSavedFile({
+          id: msg.historyId,
+          fileId: msg.fileId,
+          url: msg.url,
+          saveKind: msg.saveKind,
+        });
         send({ type: 'OK' });
         break;
       }

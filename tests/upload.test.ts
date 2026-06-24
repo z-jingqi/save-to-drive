@@ -9,7 +9,9 @@ const syncStore: StorageArea = {};
 const sessionStore: StorageArea = {};
 const runtimeMessages: unknown[] = [];
 let authTokenCalls = 0;
+const authTokenDetails: chrome.identity.TokenDetails[] = [];
 let failSessionSet = false;
+let fetchCalls: Array<{ url: string; init: RequestInit }> = [];
 
 installChromeMock();
 
@@ -169,6 +171,72 @@ test('AUTH_REQUIRED retry clears the cached Google token before enqueueing retry
   assert.equal(stateManager.getJob(job.id)?.retries, 1);
 });
 
+test('discardResumeUpload deletes created Drive files only for non-success jobs', async () => {
+  fetchCalls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = ((url: string | URL | Request, init: RequestInit = {}) => {
+    const asString = typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url;
+    fetchCalls.push({ url: asString, init });
+    return Promise.resolve(new Response(null, { status: 204 }));
+  }) as typeof fetch;
+
+  try {
+    const failedJob: Job = {
+      id: 'job-delete-failed-file',
+      url: 'https://source.example/file.bin',
+      filename: 'file.bin',
+      mimeType: 'application/octet-stream',
+      state: 'ERROR',
+      progress: 99,
+      providerId: 'google-drive',
+      folderId: null,
+      folderName: 'My Drive',
+      fileId: 'drive-file-failed',
+      retries: 0,
+    };
+    const successJob: Job = {
+      ...failedJob,
+      id: 'job-keep-success-file',
+      state: 'SUCCESS',
+      fileId: 'drive-file-success',
+    };
+
+    stateManager.addJob(failedJob);
+    stateManager.addJob(successJob);
+
+    await upload.discardResumeUpload(failedJob.id, true);
+    await upload.discardResumeUpload(successJob.id, true);
+
+    assert.deepEqual(fetchCalls.map(call => [call.url, call.init.method]), [
+      ['https://www.googleapis.com/drive/v3/files/drive-file-failed', 'DELETE'],
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('deleteRemoteFile uses interactive auth for user-initiated deletes', async () => {
+  authTokenDetails.length = 0;
+  fetchCalls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = ((url: string | URL | Request, init: RequestInit = {}) => {
+    const asString = typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url;
+    fetchCalls.push({ url: asString, init });
+    return Promise.resolve(new Response(null, { status: 204 }));
+  }) as typeof fetch;
+
+  try {
+    await upload.deleteRemoteFile('google-drive', 'drive-file-user-delete', true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(authTokenDetails.at(-1)?.interactive, true);
+  assert.deepEqual(fetchCalls.map(call => [call.url, call.init.method]), [
+    ['https://www.googleapis.com/drive/v3/files/drive-file-user-delete', 'DELETE'],
+  ]);
+});
+
 function installChromeMock(): void {
   globalThis.chrome = {
     storage: {
@@ -189,7 +257,8 @@ function installChromeMock(): void {
       },
     },
     identity: {
-      getAuthToken(_details: chrome.identity.TokenDetails, callback: (token?: string) => void) {
+      getAuthToken(details: chrome.identity.TokenDetails, callback: (token?: string) => void) {
+        authTokenDetails.push(details);
         authTokenCalls++;
         callback('google-token');
       },

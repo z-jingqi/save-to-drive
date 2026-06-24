@@ -1,6 +1,6 @@
 import type { Job, OffscreenResponse } from '../lib/types.ts';
 import { removeCachedToken } from '../lib/auth.ts';
-import { cancelResumableSession } from '../lib/drive-api.ts';
+import { cancelResumableSession, deleteDriveFile } from '../lib/drive-api.ts';
 import {
   getTempContent,
   putTempContent,
@@ -161,6 +161,7 @@ export async function runJob(jobId: string): Promise<void> {
 }
 
 export async function discardResumeUpload(jobId: string, deleteRemote: boolean): Promise<void> {
+  const job = getJob(jobId);
   const state = await getResumeUploadState(jobId);
   if (state && deleteRemote && state.providerId === 'google-drive') {
     try {
@@ -171,8 +172,23 @@ export async function discardResumeUpload(jobId: string, deleteRemote: boolean):
       // expired the upload URI or auth is unavailable.
     }
   }
+  if (job?.fileId && deleteRemote && job.providerId === 'google-drive' && job.state !== 'SUCCESS') {
+    try {
+      const token = await getProvider(job.providerId).getToken(false);
+      await deleteDriveFile(job.fileId, token);
+    } catch {
+      // Removing the local failed job should still work if Drive already
+      // deleted the file, auth is unavailable, or the file id is stale.
+    }
+  }
   await clearResumeUploadState(jobId);
   clearInlineUploadContent(jobId);
+}
+
+export async function deleteRemoteFile(providerId: string, fileId: string, interactive = false): Promise<void> {
+  if (providerId !== 'google-drive') throw new Error('Remote delete is only supported for Google Drive files');
+  const token = await getProvider(providerId).getToken(interactive);
+  await deleteDriveFile(fileId, token);
 }
 
 export function onOffscreenMessage(
@@ -236,16 +252,18 @@ export function onOffscreenMessageWithDeps(
       const job = getJob(msg.jobId);
       if (job) {
         notifySuccess(job);
-        addToHistory({
+        void addToHistory({
           id: job.id,
           url: job.url,
           saveKind: job.saveKind,
+          providerId: job.providerId,
+          fileId: job.fileId,
           filename: job.filename,
           folderName: job.folderName,
           folderViewLink: job.folderViewLink ?? '',
           webViewLink: job.webViewLink ?? '',
           savedAt: Date.now(),
-        });
+        }).catch(console.error);
         incrementSavesToday();
         void clearResumeUploadState(msg.jobId);
       }
