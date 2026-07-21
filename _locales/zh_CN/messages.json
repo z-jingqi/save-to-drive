@@ -110,6 +110,16 @@
   "job_save_start":    { "message": "保存" },
   "job_duplicate_warning": { "message": "⚠ 已保存过" },
   "job_save_anyway":       { "message": "仍然保存" },
+  "select_enter":  { "message": "选择" },
+  "select_all":    { "message": "全选" },
+  "select_invert": { "message": "反选" },
+  "select_count":  { "message": "已选 $COUNT$ 项", "placeholders": { "count": { "content": "$1" } } },
+  "select_remove": { "message": "从列表移除（$COUNT$）", "placeholders": { "count": { "content": "$1" } } },
+  "select_delete": { "message": "从 Drive 删除（$COUNT$）", "placeholders": { "count": { "content": "$1" } } },
+  "select_delete_confirm": {
+    "message": "要从 Google Drive 删除选中的 $COUNT$ 个文件吗？此操作无法在这里撤销。",
+    "placeholders": { "count": { "content": "$1" } }
+  },
   "job_duplicate_title":   { "message": "该链接之前已保存过" },
 
   "folder_last_used":        { "message": "上次使用：" },

@@ -73,6 +73,16 @@ export function removeJob(id: string): void {
   broadcastJobs();
 }
 
+/** Batch counterpart of removeJob — one persist + one broadcast for the whole set. */
+export function removeJobs(ids: string[]): void {
+  let removed = false;
+  for (const id of ids) removed = jobs.delete(id) || removed;
+  if (!removed) return;
+  persistJobs();
+  updateBadge();
+  broadcastJobs();
+}
+
 // ── Upload queue (max 3 concurrent) ──────────────────────────────────────────
 
 type RunFn = (id: string) => Promise<void>;

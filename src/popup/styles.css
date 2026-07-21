@@ -382,6 +382,53 @@ body { background: var(--bg); min-width: 320px; max-width: 360px; }
 }
 
 /* ── Job list ────────────────────────────────────────────────── */
+.job-section { display: flex; flex-direction: column; }
+
+.job-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 10px 5px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.job-toolbar-left { min-width: 0; }
+.job-toolbar-right { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.select-count { font-size: 11px; color: var(--sub); }
+.select-btn {
+  background: none; border: none; font-size: 11px; color: var(--sub);
+  cursor: pointer; padding: 2px 5px; border-radius: 3px; font-family: inherit;
+}
+.select-btn:hover { color: var(--blue); background: var(--hover); }
+
+.job-batch-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 5px 10px 6px 14px;
+  border-top: 1px solid var(--border);
+}
+.batch-btn {
+  background: none; border: none; font-size: 11px; color: var(--sub);
+  cursor: pointer; padding: 3px 6px; border-radius: 3px; font-family: inherit;
+}
+.batch-btn:hover { color: var(--blue); background: var(--hover); }
+.batch-btn:disabled { opacity: 0.45; cursor: default; }
+.batch-btn:disabled:hover { color: var(--sub); background: none; }
+.batch-btn-danger { color: var(--red); }
+.batch-btn-danger:hover { color: var(--red); background: var(--hover); }
+
+.job-checkbox {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--blue);
+  cursor: pointer;
+}
+.job-checkbox:disabled { cursor: default; }
+.job-row-selected { background: var(--hover); }
+
 .job-list {
   list-style: none;
   max-height: 360px;

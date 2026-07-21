@@ -110,6 +110,16 @@
   "job_save_start":    { "message": "Save" },
   "job_duplicate_warning": { "message": "⚠ Already saved" },
   "job_save_anyway":       { "message": "Save anyway" },
+  "select_enter":  { "message": "Select" },
+  "select_all":    { "message": "All" },
+  "select_invert": { "message": "Invert" },
+  "select_count":  { "message": "$COUNT$ selected", "placeholders": { "count": { "content": "$1" } } },
+  "select_remove": { "message": "Remove from list ($COUNT$)", "placeholders": { "count": { "content": "$1" } } },
+  "select_delete": { "message": "Delete from Drive ($COUNT$)", "placeholders": { "count": { "content": "$1" } } },
+  "select_delete_confirm": {
+    "message": "Delete $COUNT$ selected file(s) from Google Drive? This cannot be undone here.",
+    "placeholders": { "count": { "content": "$1" } }
+  },
   "job_duplicate_title":   { "message": "This URL was previously saved to Drive" },
 
   "folder_last_used":        { "message": "Last used:" },

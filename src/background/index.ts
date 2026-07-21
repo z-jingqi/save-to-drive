@@ -15,7 +15,7 @@ import {
 import { capturePage, type PageCaptureFormat } from './page-capture.ts';
 import {
   addJob, enqueue, getJobs, getPrefs, getPrefsSync, initPrefs,
-  setPrefs, setLastFolderForProvider, getLastFolder, updateJob, removeJob,
+  setPrefs, setLastFolderForProvider, getLastFolder, updateJob, removeJob, removeJobs,
   getHistory, clearHistory, removeHistoryEntriesForSavedFile, initSavesToday, initJobs, pruneExpiredResumeUploadStates,
   findInProgressJobBySaveTarget,
 } from './state-manager.ts';
@@ -424,6 +424,46 @@ async function handlePopupMessage(msg: PopupMessage, send: (r: unknown) => void)
           url: msg.url,
           saveKind: msg.saveKind,
         });
+        send({ type: 'OK' });
+        break;
+      }
+
+      case 'DELETE_SAVED_FILES': {
+        // Sequential on purpose: each delete needs a token, and a burst of
+        // parallel Drive calls buys nothing for a popup-sized selection.
+        const deletedIds: string[] = [];
+        const failedIds: string[] = [];
+        for (const jobId of msg.jobIds) {
+          const job = getJobs().find(j => j.id === jobId);
+          if (!job?.fileId) {
+            failedIds.push(jobId);
+            continue;
+          }
+          try {
+            await deleteRemoteFile(job.providerId, job.fileId, true);
+            await removeHistoryEntriesForSavedFile({
+              id: job.id,
+              fileId: job.fileId,
+              url: job.url,
+              saveKind: job.saveKind,
+            });
+            deletedIds.push(jobId);
+          } catch (err) {
+            console.error('DELETE_SAVED_FILES', jobId, err);
+            failedIds.push(jobId);
+          }
+        }
+        removeJobs(deletedIds);
+        send({ type: 'BATCH_DELETE_RESULT', deletedIds, failedIds });
+        break;
+      }
+
+      case 'REMOVE_JOBS': {
+        for (const jobId of msg.jobIds) {
+          const job = getJobs().find(j => j.id === jobId);
+          if (job?.state !== 'SUCCESS') await discardResumeUpload(jobId, true);
+        }
+        removeJobs(msg.jobIds);
         send({ type: 'OK' });
         break;
       }

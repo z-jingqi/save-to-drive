@@ -110,6 +110,16 @@
   "job_save_start":    { "message": "保存" },
   "job_duplicate_warning": { "message": "⚠ 保存済み" },
   "job_save_anyway":       { "message": "保存する" },
+  "select_enter":  { "message": "選択" },
+  "select_all":    { "message": "すべて" },
+  "select_invert": { "message": "反転" },
+  "select_count":  { "message": "$COUNT$ 件選択中", "placeholders": { "count": { "content": "$1" } } },
+  "select_remove": { "message": "リストから削除（$COUNT$）", "placeholders": { "count": { "content": "$1" } } },
+  "select_delete": { "message": "Drive から削除（$COUNT$）", "placeholders": { "count": { "content": "$1" } } },
+  "select_delete_confirm": {
+    "message": "選択した $COUNT$ 件のファイルを Google Drive から削除しますか？この操作はここでは取り消せません。",
+    "placeholders": { "count": { "content": "$1" } }
+  },
   "job_duplicate_title":   { "message": "このURLは以前に保存されています" },
 
   "folder_last_used":        { "message": "前回:" },

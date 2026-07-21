@@ -163,6 +163,11 @@ function RenameRow({ job, destination }: { job: Job; destination: StartJobDestin
 
 // ── Job list ──────────────────────────────────────────────────────────────────
 
+/** Rows the user can batch-act on: finished jobs that carry a remove button today. */
+function isSelectable(job: Job): boolean {
+  return job.state === 'SUCCESS' || job.state === 'ERROR';
+}
+
 interface Props {
   jobs: Job[];
   renameBeforeSave: boolean;
@@ -171,13 +176,42 @@ interface Props {
   deleteErrors: Record<string, string>;
   startDestination: StartJobDestination;
   onDeleteSavedFile: (job: Job) => void;
+  onDeleteSavedFiles: (jobs: Job[]) => void;
+  onRemoveMany: (jobIds: string[]) => void;
 }
 
-export function JobList({ jobs, renameBeforeSave, deletingIds, exitingIds, deleteErrors, startDestination, onDeleteSavedFile }: Props) {
+export function JobList({ jobs, renameBeforeSave, deletingIds, exitingIds, deleteErrors, startDestination, onDeleteSavedFile, onDeleteSavedFiles, onRemoveMany }: Props) {
   const [confirmedDuplicateIds, setConfirmedDuplicateIds] = useState<string[]>([]);
+  const [selecting, setSelecting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const listRef = useRef<HTMLUListElement>(null);
   const confirmDuplicate = (id: string) =>
     setConfirmedDuplicateIds(prev => [...prev, id]);
+
+  const selectableJobs = jobs.filter(isSelectable);
+
+  // Drop selections whose rows are gone (removed, retried back into progress…)
+  useEffect(() => {
+    const live = new Set(selectableJobs.map(j => j.id));
+    setSelectedIds(prev => {
+      const next = prev.filter(id => live.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+    if (live.size === 0) setSelecting(false);
+  }, [jobs]);
+
+  const selected = new Set(selectedIds);
+  const selectedJobs = selectableJobs.filter(j => selected.has(j.id));
+  const remoteDeletable = selectedJobs.filter(j => j.state === 'SUCCESS' && j.fileId);
+
+  const exitSelection = () => {
+    setSelecting(false);
+    setSelectedIds([]);
+  };
+  const toggle = (id: string) =>
+    setSelectedIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
+  const selectAll = () => setSelectedIds(selectableJobs.map(j => j.id));
+  const invert = () => setSelectedIds(selectableJobs.filter(j => !selected.has(j.id)).map(j => j.id));
 
   // When rename is toggled OFF, auto-start any duplicate job the user already confirmed
   // (clicked "Save anyway"). App.tsx handles non-duplicate IDLE jobs; this covers
@@ -196,7 +230,28 @@ export function JobList({ jobs, renameBeforeSave, deletingIds, exitingIds, delet
   }, [jobs.length, jobs[jobs.length - 1]?.id, jobs[jobs.length - 1]?.state]);
 
   return (
-    <ul class="job-list" ref={listRef}>
+    <div class="job-section">
+      {selectableJobs.length > 0 && (
+        <div class="job-toolbar">
+          <span class="job-toolbar-left">
+            {selecting && (
+              <span class="select-count">{t('select_count', String(selectedIds.length))}</span>
+            )}
+          </span>
+          <span class="job-toolbar-right">
+            {selecting ? (
+              <>
+                <button class="select-btn" onClick={selectAll}>{t('select_all')}</button>
+                <button class="select-btn" onClick={invert}>{t('select_invert')}</button>
+                <button class="select-btn" onClick={exitSelection}>{t('popup_cancel')}</button>
+              </>
+            ) : (
+              <button class="select-btn" onClick={() => setSelecting(true)}>{t('select_enter')}</button>
+            )}
+          </span>
+        </div>
+      )}
+      <ul class="job-list" ref={listRef}>
       {jobs.map(job => {
         if (job.state === 'IDLE' && job.isDuplicate && !confirmedDuplicateIds.includes(job.id)) {
           const onConfirm = renameBeforeSave
@@ -218,12 +273,25 @@ export function JobList({ jobs, renameBeforeSave, deletingIds, exitingIds, delet
         const deleteError = deleteErrors[deleteStateKey];
         const isLocked = isDeleting || isExiting;
         const savedFolder = isSuccess ? savedFolderParts(job.folderName) : null;
+        const selectable = selecting && isSelectable(job);
+        const isSelected = selected.has(job.id);
 
         return (
           <li
             key={job.id}
-            class={`job-row job-${job.state.toLowerCase()}${isDeleting ? ' item-deleting' : ''}${isExiting ? ' item-exiting' : ''}`}
+            class={`job-row job-${job.state.toLowerCase()}${isDeleting ? ' item-deleting' : ''}${isExiting ? ' item-exiting' : ''}${selectable && isSelected ? ' job-row-selected' : ''}`}
+            onClick={selectable && !isLocked ? () => toggle(job.id) : undefined}
           >
+            {selectable && (
+              <input
+                type="checkbox"
+                class="job-checkbox"
+                checked={isSelected}
+                disabled={isLocked}
+                onClick={(ev) => ev.stopPropagation()}
+                onChange={() => { if (!isLocked) toggle(job.id); }}
+              />
+            )}
             <ThumbCell job={job} />
 
             <div class={`job-content${isSuccess ? ' job-content-success' : ''}`}>
@@ -232,8 +300,13 @@ export function JobList({ jobs, renameBeforeSave, deletingIds, exitingIds, delet
                   <button
                     class="job-name job-name-link"
                     disabled={isLocked}
-                    title={t('job_open_file')}
-                    onClick={(e) => { e.stopPropagation(); if (!isLocked) openInDrive(fileUrl(job)); }}
+                    title={selectable ? '' : t('job_open_file')}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isLocked) return;
+                      if (selectable) toggle(job.id);
+                      else openInDrive(fileUrl(job));
+                    }}
                   >
                     {job.filename}
                   </button>
@@ -248,8 +321,13 @@ export function JobList({ jobs, renameBeforeSave, deletingIds, exitingIds, delet
                     <button
                       class="job-folder-saved-name"
                       disabled={isLocked}
-                      title={t('job_open_folder')}
-                      onClick={(e) => { e.stopPropagation(); if (!isLocked) openInDrive(folderUrl(job)); }}
+                      title={selectable ? '' : t('job_open_folder')}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (isLocked) return;
+                        if (selectable) toggle(job.id);
+                        else openInDrive(folderUrl(job));
+                      }}
                     >
                       {savedFolder?.name}
                     </button>
@@ -277,19 +355,21 @@ export function JobList({ jobs, renameBeforeSave, deletingIds, exitingIds, delet
                   <span class="error-text" title={job.error}>
                     {errorLabel(job)}
                   </span>
-                  <button class="retry-btn" disabled={isLocked} onClick={(e) => { e.stopPropagation(); if (!isLocked) retryJob(job.id); }}>
-                    <RotateCcw size={11} strokeWidth={2.5} /> {t('job_retry')}
-                  </button>
+                  {!selectable && (
+                    <button class="retry-btn" disabled={isLocked} onClick={(e) => { e.stopPropagation(); if (!isLocked) retryJob(job.id); }}>
+                      <RotateCcw size={11} strokeWidth={2.5} /> {t('job_retry')}
+                    </button>
+                  )}
                 </div>
               )}
             </div>
 
-            {(isSuccess || isError) && (
+            {(isSuccess || isError) && !selectable && (
               <button class="job-remove" disabled={isLocked} title={isSuccess ? t('job_remove_record') : t('job_remove')} onClick={(e) => { e.stopPropagation(); if (!isLocked) removeJob(job.id); }}>
                 <X size={13} strokeWidth={2.5} />
               </button>
             )}
-            {isSuccess && job.fileId && (
+            {isSuccess && job.fileId && !selectable && (
               <button class="job-remove job-delete-drive" disabled={isLocked} title={t('job_delete_drive')} onClick={(e) => { e.stopPropagation(); if (!isLocked) onDeleteSavedFile(job); }}>
                 <Trash2 size={13} strokeWidth={2.5} />
               </button>
@@ -312,6 +392,25 @@ export function JobList({ jobs, renameBeforeSave, deletingIds, exitingIds, delet
           </li>
         );
       })}
-    </ul>
+      </ul>
+      {selecting && (
+        <div class="job-batch-footer">
+          <button
+            class="batch-btn"
+            disabled={selectedJobs.length === 0}
+            onClick={() => { onRemoveMany(selectedJobs.map(j => j.id)); exitSelection(); }}
+          >
+            {t('select_remove', String(selectedJobs.length))}
+          </button>
+          <button
+            class="batch-btn batch-btn-danger"
+            disabled={remoteDeletable.length === 0}
+            onClick={() => { onDeleteSavedFiles(remoteDeletable); exitSelection(); }}
+          >
+            {t('select_delete', String(remoteDeletable.length))}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

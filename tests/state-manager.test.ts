@@ -119,6 +119,43 @@ test('adding a job broadcasts popup state immediately', async () => {
   assert.deepEqual(runtimeMessages.at(-1), { type: 'STATE', jobs: stateManager.getJobs() });
 });
 
+test('batch job removal drops the selected ids in a single broadcast', async () => {
+  runtimeMessages.length = 0;
+  const base: Job = {
+    id: '',
+    url: 'https://source.example/batch.png',
+    filename: 'batch.png',
+    mimeType: 'image/png',
+    saveKind: 'image',
+    state: 'SUCCESS',
+    progress: 100,
+    providerId: 'google-drive',
+    folderId: null,
+    folderName: 'Google Drive',
+    retries: 0,
+  };
+  stateManager.addJob({ ...base, id: 'job-batch-a' });
+  stateManager.addJob({ ...base, id: 'job-batch-b' });
+  stateManager.addJob({ ...base, id: 'job-batch-c' });
+  runtimeMessages.length = 0;
+
+  stateManager.removeJobs(['job-batch-a', 'job-batch-c', 'job-batch-missing']);
+  await settleAsyncWrites();
+
+  const batchIds = () => stateManager.getJobs().map(j => j.id).filter(id => id.startsWith('job-batch-'));
+  assert.deepEqual(batchIds(), ['job-batch-b']);
+  assert.equal(runtimeMessages.length, 1);
+
+  // A no-op batch must not persist or broadcast.
+  runtimeMessages.length = 0;
+  stateManager.removeJobs(['job-batch-missing']);
+  stateManager.removeJobs([]);
+  await settleAsyncWrites();
+  assert.equal(runtimeMessages.length, 0);
+
+  stateManager.removeJob('job-batch-b');
+});
+
 test('in-progress save target lookup dedupes waiting and active jobs only', () => {
   const base: Job = {
     id: 'job-dedupe-idle',

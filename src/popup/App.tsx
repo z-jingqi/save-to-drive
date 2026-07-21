@@ -83,56 +83,74 @@ function App() {
     });
   };
 
-  const beginDelete = (kind: DeleteKind, id: string) => {
-    const key = deleteKey(kind, id);
-    setDeletingIds(prev => ({ ...prev, [key]: true }));
+  const beginDeleteMany = (kind: DeleteKind, ids: string[]) => {
+    const keys = ids.map(id => deleteKey(kind, id));
+    setDeletingIds(prev => {
+      const next = { ...prev };
+      keys.forEach(key => { next[key] = true; });
+      return next;
+    });
     setDeleteErrors(prev => {
       const next = { ...prev };
-      delete next[key];
+      keys.forEach(key => { delete next[key]; });
       return next;
     });
   };
 
-  const failDelete = (kind: DeleteKind, id: string) => {
-    const key = deleteKey(kind, id);
+  const failDeleteMany = (kind: DeleteKind, ids: string[]) => {
+    const keys = ids.map(id => deleteKey(kind, id));
     setDeletingIds(prev => {
       const next = { ...prev };
-      delete next[key];
+      keys.forEach(key => { delete next[key]; });
       return next;
     });
-    setDeleteErrors(prev => ({ ...prev, [key]: t('job_delete_drive_failed') }));
+    setDeleteErrors(prev => {
+      const next = { ...prev };
+      keys.forEach(key => { next[key] = t('job_delete_drive_failed'); });
+      return next;
+    });
   };
 
-  const finishDelete = (kind: DeleteKind, id: string) => {
-    const key = deleteKey(kind, id);
+  /** Play the exit animation for the given rows, then drop them from local state. */
+  const finishDeleteMany = (kind: DeleteKind, ids: string[]) => {
+    if (ids.length === 0) return;
+    const keys = ids.map(id => deleteKey(kind, id));
     setDeletingIds(prev => {
       const next = { ...prev };
-      delete next[key];
+      keys.forEach(key => { delete next[key]; });
       return next;
     });
-    setExitingIds(prev => ({ ...prev, [key]: true }));
+    setExitingIds(prev => {
+      const next = { ...prev };
+      keys.forEach(key => { next[key] = true; });
+      return next;
+    });
     window.setTimeout(() => {
       setExitingIds(prev => {
         const next = { ...prev };
-        delete next[key];
+        keys.forEach(key => { delete next[key]; });
         return next;
       });
       if (kind === 'job') {
         setExitingJobs(prev => {
           const next = { ...prev };
-          delete next[id];
+          ids.forEach(id => { delete next[id]; });
           return next;
         });
       } else {
         setExitingHistory(prev => {
           const next = { ...prev };
-          delete next[id];
+          ids.forEach(id => { delete next[id]; });
           return next;
         });
         refreshHistory();
       }
     }, DELETE_EXIT_MS);
   };
+
+  const beginDelete = (kind: DeleteKind, id: string) => beginDeleteMany(kind, [id]);
+  const failDelete = (kind: DeleteKind, id: string) => failDeleteMany(kind, [id]);
+  const finishDelete = (kind: DeleteKind, id: string) => finishDeleteMany(kind, [id]);
 
   const deleteJobRemoteFile = (job: Job) => {
     if (!job.fileId) return;
@@ -177,6 +195,45 @@ function App() {
       }
       finishDelete('history', entry.id);
     });
+  };
+
+  /** Batch "delete from Drive" — removes the remote files and their rows. */
+  const deleteJobRemoteFiles = (batch: Job[]) => {
+    const targets = batch.filter(job => job.fileId);
+    if (targets.length === 0) return;
+    if (!window.confirm(t('select_delete_confirm', String(targets.length)))) return;
+
+    const ids = targets.map(job => job.id);
+    beginDeleteMany('job', ids);
+    setExitingJobs(prev => {
+      const next = { ...prev };
+      targets.forEach(job => { next[job.id] = job; });
+      return next;
+    });
+    chrome.runtime.sendMessage({ type: 'DELETE_SAVED_FILES', jobIds: ids }, (res) => {
+      const failedIds: string[] = res?.type === 'BATCH_DELETE_RESULT' ? res.failedIds : ids;
+      const deletedIds: string[] = res?.type === 'BATCH_DELETE_RESULT' ? res.deletedIds : [];
+      // Failed rows stay in the live job list, so drop their exit snapshots.
+      setExitingJobs(prev => {
+        const next = { ...prev };
+        failedIds.forEach(id => { delete next[id]; });
+        return next;
+      });
+      failDeleteMany('job', failedIds);
+      finishDeleteMany('job', deletedIds);
+    });
+  };
+
+  /** Batch "remove from list" — drops the rows only; the Drive files stay put. */
+  const removeJobs = (ids: string[]) => {
+    if (ids.length === 0) return;
+    chrome.runtime.sendMessage({ type: 'REMOVE_JOBS', jobIds: ids });
+    setExitingJobs(prev => {
+      const next = { ...prev };
+      jobs.filter(job => ids.includes(job.id)).forEach(job => { next[job.id] = job; });
+      return next;
+    });
+    finishDeleteMany('job', ids);
   };
 
   const visibleJobs = [
@@ -274,6 +331,8 @@ function App() {
           deleteErrors={deleteErrors}
           startDestination={startDestination}
           onDeleteSavedFile={deleteJobRemoteFile}
+          onDeleteSavedFiles={deleteJobRemoteFiles}
+          onRemoveMany={removeJobs}
         />
       )}
 

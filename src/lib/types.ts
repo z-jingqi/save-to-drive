@@ -110,6 +110,8 @@ export type PopupMessage =
   | { type: 'REMOVE_JOB'; jobId: string }
   | { type: 'DELETE_SAVED_FILE'; jobId: string }
   | { type: 'DELETE_HISTORY_FILE'; historyId: string; providerId: string; fileId: string; url?: string; saveKind?: SaveKind }
+  | { type: 'DELETE_SAVED_FILES'; jobIds: string[] }
+  | { type: 'REMOVE_JOBS'; jobIds: string[] }
   | { type: 'CANCEL_JOB'; jobId: string }
   | { type: 'PAUSE_JOB'; jobId: string }
   | { type: 'RESUME_JOB'; jobId: string }
@@ -123,6 +125,7 @@ export type PopupResponse =
   | { type: 'FOLDERS'; folders: Folder[] }
   | { type: 'FOLDER_CREATED'; folder: Folder }
   | { type: 'HISTORY'; entries: HistoryEntry[] }
+  | { type: 'BATCH_DELETE_RESULT'; deletedIds: string[]; failedIds: string[] }
   | { type: 'OK' }
   | { type: 'ERROR'; message: string };
 
