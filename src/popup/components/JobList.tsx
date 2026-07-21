@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'preact/hooks';
 import { X, RotateCcw, Eye, Pause, Play, Trash2 } from 'lucide-react';
 import { editableFilename } from '../../lib/filename.ts';
 import { t } from '../../lib/i18n.ts';
-import type { Job } from '../../lib/types.ts';
+import type { Job, StartJobDestination } from '../../lib/types.ts';
 import { FileThumb } from './FileThumb.tsx';
 
 // ── Thumbnail cell with state overlays ────────────────────────────────────────
@@ -92,8 +92,8 @@ const cancelJob    = (jobId: string)  => chrome.runtime.sendMessage({ type: 'CAN
 const pauseJob     = (jobId: string)  => chrome.runtime.sendMessage({ type: 'PAUSE_JOB', jobId });
 const resumeJob    = (jobId: string)  => chrome.runtime.sendMessage({ type: 'RESUME_JOB', jobId });
 const retryJob     = (jobId: string)  => chrome.runtime.sendMessage({ type: 'RETRY_JOB', jobId });
-const startJob     = (jobId: string, filename: string) =>
-  chrome.runtime.sendMessage({ type: 'START_JOB', jobId, filename });
+const startJob     = (jobId: string, filename: string, destination?: StartJobDestination) =>
+  chrome.runtime.sendMessage({ type: 'START_JOB', jobId, filename, destination });
 
 // ── Duplicate confirm row (IDLE state, duplicate detected, rename mode off) ───
 
@@ -126,7 +126,7 @@ function DuplicateConfirmRow({ job, onConfirm }: { job: Job; onConfirm: () => vo
 
 // ── Rename row (IDLE state, rename mode on) ───────────────────────────────────
 
-function RenameRow({ job }: { job: Job }) {
+function RenameRow({ job, destination }: { job: Job; destination: StartJobDestination }) {
   const [name, setName] = useState(editableFilename(job));
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -134,7 +134,7 @@ function RenameRow({ job }: { job: Job }) {
 
   const confirm = () => {
     const trimmed = name.trim() || editableFilename(job);
-    startJob(job.id, trimmed);
+    startJob(job.id, trimmed, destination);
   };
 
   return (
@@ -169,10 +169,11 @@ interface Props {
   deletingIds: Record<string, true>;
   exitingIds: Record<string, true>;
   deleteErrors: Record<string, string>;
+  startDestination: StartJobDestination;
   onDeleteSavedFile: (job: Job) => void;
 }
 
-export function JobList({ jobs, renameBeforeSave, deletingIds, exitingIds, deleteErrors, onDeleteSavedFile }: Props) {
+export function JobList({ jobs, renameBeforeSave, deletingIds, exitingIds, deleteErrors, startDestination, onDeleteSavedFile }: Props) {
   const [confirmedDuplicateIds, setConfirmedDuplicateIds] = useState<string[]>([]);
   const listRef = useRef<HTMLUListElement>(null);
   const confirmDuplicate = (id: string) =>
@@ -185,8 +186,8 @@ export function JobList({ jobs, renameBeforeSave, deletingIds, exitingIds, delet
     if (renameBeforeSave) return;
     jobs
       .filter(j => j.state === 'IDLE' && j.isDuplicate && confirmedDuplicateIds.includes(j.id))
-      .forEach(j => startJob(j.id, j.filename));
-  }, [renameBeforeSave]);
+      .forEach(j => startJob(j.id, j.filename, startDestination));
+  }, [renameBeforeSave, startDestination]);
 
   useEffect(() => {
     const list = listRef.current;
@@ -200,11 +201,11 @@ export function JobList({ jobs, renameBeforeSave, deletingIds, exitingIds, delet
         if (job.state === 'IDLE' && job.isDuplicate && !confirmedDuplicateIds.includes(job.id)) {
           const onConfirm = renameBeforeSave
             ? () => confirmDuplicate(job.id)
-            : () => startJob(job.id, job.filename);
+            : () => startJob(job.id, job.filename, startDestination);
           return <DuplicateConfirmRow key={job.id} job={job} onConfirm={onConfirm} />;
         }
         if (job.state === 'IDLE' && renameBeforeSave) {
-          return <RenameRow key={job.id} job={job} />;
+          return <RenameRow key={job.id} job={job} destination={startDestination} />;
         }
 
         const isSuccess = job.state === 'SUCCESS';

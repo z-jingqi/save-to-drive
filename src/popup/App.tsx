@@ -1,8 +1,8 @@
 import { render } from 'preact';
-import { useState, useEffect, useRef } from 'preact/hooks';
+import { useState, useEffect, useMemo, useRef } from 'preact/hooks';
 import { Folder as FolderIcon, Settings } from 'lucide-react';
 import { t } from '../lib/i18n.ts';
-import type { Job, Prefs, Folder, HistoryEntry } from '../lib/types.ts';
+import type { Job, Prefs, Folder, HistoryEntry, StartJobDestination } from '../lib/types.ts';
 import { googleDriveProvider } from '../providers/google-drive.ts';
 import { JobList } from './components/JobList.tsx';
 import { FolderPicker } from './components/FolderPicker.tsx';
@@ -64,6 +64,11 @@ function App() {
 
   const lastFolder = prefs.lastFolders?.[PROVIDER_ID] ?? null;
   const folderName = lastFolder?.name ?? googleDriveProvider.rootFolderName;
+  const startDestination = useMemo<StartJobDestination>(() => ({
+    providerId: PROVIDER_ID,
+    folderId: lastFolder?.id ?? null,
+    folderName,
+  }), [lastFolder?.id, folderName]);
 
   const onFolderSelected = (folder: Folder | null) => {
     const updated = { ...prefs.lastFolders, [PROVIDER_ID]: folder };
@@ -204,7 +209,12 @@ function App() {
                 if (!next) {
                   jobs
                     .filter(j => j.state === 'IDLE' && !j.isDuplicate)
-                    .forEach(j => chrome.runtime.sendMessage({ type: 'START_JOB', jobId: j.id, filename: j.filename }));
+                    .forEach(j => chrome.runtime.sendMessage({
+                      type: 'START_JOB',
+                      jobId: j.id,
+                      filename: j.filename,
+                      destination: startDestination,
+                    }));
                 }
               }}
             />
@@ -262,6 +272,7 @@ function App() {
           deletingIds={deletingIds}
           exitingIds={exitingIds}
           deleteErrors={deleteErrors}
+          startDestination={startDestination}
           onDeleteSavedFile={deleteJobRemoteFile}
         />
       )}

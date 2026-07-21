@@ -174,18 +174,8 @@ async function prepareJobForUpload(jobId: string): Promise<void> {
   }
 
   const prefs = await getPrefs();
-  let providerId = prefs.providerId;
-  try {
-    await getProvider(providerId).getToken(false);
-  } catch {
-    providerId = 'google-drive';
-  }
-  const folder = getLastFolder(providerId);
-  updateJob(job.id, {
-    providerId,
-    folderId: folder?.id ?? null,
-    folderName: folder?.name ?? getProvider(providerId).name,
-  });
+  const destination = await currentUploadDestination(prefs.providerId);
+  updateJob(job.id, destination);
 
   const hist = await getHistory();
   const dup = hist.find(e =>
@@ -202,6 +192,22 @@ async function prepareJobForUpload(jobId: string): Promise<void> {
   if (!dup && !prefs.renameBeforeSave) enqueue(job.id, runJob);
 }
 
+async function currentUploadDestination(preferredProviderId?: string): Promise<Pick<Job, 'providerId' | 'folderId' | 'folderName'>> {
+  let providerId = preferredProviderId ?? (await getPrefs()).providerId;
+  try {
+    await getProvider(providerId).getToken(false);
+  } catch {
+    providerId = 'google-drive';
+  }
+  const provider = getProvider(providerId);
+  const folder = getLastFolder(providerId);
+  return {
+    providerId,
+    folderId: folder?.id ?? null,
+    folderName: folder?.name ?? provider.rootFolderName,
+  };
+}
+
 function createJob(args: {
   url: string;
   sourceUrl?: string;
@@ -213,7 +219,7 @@ function createJob(args: {
 }): Job {
   const cached = getPrefsSync();
   const lastFolder = getLastFolder(cached.providerId);
-  const providerName = (() => { try { return getProvider(cached.providerId).name; } catch { return ''; } })();
+  const rootFolderName = (() => { try { return getProvider(cached.providerId).rootFolderName; } catch { return ''; } })();
   return {
     id: crypto.randomUUID(),
     url: args.url,
@@ -226,7 +232,7 @@ function createJob(args: {
     progress: 0,
     providerId: cached.providerId,
     folderId: lastFolder?.id ?? null,
-    folderName: lastFolder?.name ?? providerName,
+    folderName: lastFolder?.name ?? rootFolderName,
     pageTitle: args.pageTitle,
     retries: 0,
   };
@@ -342,7 +348,14 @@ async function handlePopupMessage(msg: PopupMessage, send: (r: unknown) => void)
         {
           const job = getJobs().find(j => j.id === msg.jobId);
           const filename = job ? finalizeFilenameForJob(msg.filename, job) : msg.filename;
-          updateJob(msg.jobId, { filename, filenameLocked: true, error: undefined, errorCode: undefined });
+          const destination = msg.destination ?? await currentUploadDestination();
+          updateJob(msg.jobId, {
+            filename,
+            filenameLocked: true,
+            error: undefined,
+            errorCode: undefined,
+            ...destination,
+          });
         }
         enqueue(msg.jobId, runJob);
         send({ type: 'OK' });

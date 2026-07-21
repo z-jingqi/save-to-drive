@@ -55,6 +55,12 @@ export interface Job {
   retries: number;
 }
 
+export interface StartJobDestination {
+  providerId: string;
+  folderId: string | null;
+  folderName: string;
+}
+
 export interface Prefs {
   providerId: string;                           // active provider id
   lastFolders: Record<string, Folder | null>;   // per-provider last folder
@@ -107,7 +113,7 @@ export type PopupMessage =
   | { type: 'CANCEL_JOB'; jobId: string }
   | { type: 'PAUSE_JOB'; jobId: string }
   | { type: 'RESUME_JOB'; jobId: string }
-  | { type: 'START_JOB'; jobId: string; filename: string }
+  | { type: 'START_JOB'; jobId: string; filename: string; destination?: StartJobDestination }
   | { type: 'GET_HISTORY' }
   | { type: 'CLEAR_HISTORY' };
 
